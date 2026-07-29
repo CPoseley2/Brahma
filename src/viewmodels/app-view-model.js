@@ -9,7 +9,7 @@ export class AppViewModel extends EventTarget {
     this.model = model;
     this.identity = identity;
     this.identityLocked = Boolean(identity);
-    this.role = identity ? (identity.membership.role === "guardian" ? "family" : "coach") : localStorage.getItem("fairOaksU6.role") || "coach";
+    this.role = identity ? (["headCoach", "assistantCoach"].includes(identity.membership.role) ? "coach" : "family") : localStorage.getItem("fairOaksU6.role") || "coach";
     this.familyId = identity ? (identity.membership.familyId || "") : (localStorage.getItem("fairOaksU6.family") || "");
     this.userId = identity?.user.uid || null;
     this.media = services.media || null; this.teamId = services.teamId || "";

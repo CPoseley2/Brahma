@@ -2,6 +2,7 @@ import { test } from "node:test";
 import assert from "node:assert/strict";
 import { TeamHubRepository } from "../src/firebase/team-hub-repository.js";
 import { FirestoreTeamHubModel } from "../src/models/firestore-team-hub-model.js";
+import { AppViewModel } from "../src/viewmodels/app-view-model.js";
 
 test("loading an active membership records the successful login time", async () => {
   let updated;
@@ -14,6 +15,43 @@ test("loading an active membership records the successful login time", async () 
   assert.equal(updated.id, "guardian-user");
   assert.match(updated.lastLoginAt, /^\d{4}-\d{2}-\d{2}T/);
   assert.equal(membership.lastLoginAt, updated.lastLoginAt);
+});
+
+test("legacy parent roles use the guardian-safe data path", async () => {
+  const fetchedCollections = [];
+  const firestore = {
+    fetch: async model => {
+      const collection = model.collectionPath({ teamId: "fair-oaks-u6", eventId: "event-1" });
+      if (collection === "teams") return { id: "fair-oaks-u6", name: "Team", skillFramework: [] };
+      if (collection.endsWith("/families")) return { id: "family-a", displayName: "Family A" };
+      return null;
+    },
+    fetchAll: async (model, context = {}) => {
+      const collection = model.collectionPath({ teamId: "fair-oaks-u6", ...context });
+      fetchedCollections.push(collection);
+      if (collection.endsWith("/events")) return [];
+      return [];
+    },
+    fetchWhere: async (model, _conditions, context = {}) => {
+      const collection = model.collectionPath({ teamId: "fair-oaks-u6", ...context });
+      fetchedCollections.push(collection);
+      return collection.endsWith("/players") ? [{ id: "player-a", familyId: "family-a", active: true }] : [];
+    },
+  };
+  const repository = new TeamHubRepository(firestore, "fair-oaks-u6");
+  const result = await repository.loadTeamHub({ role: "parent", familyId: "family-a", active: true });
+  assert.deepEqual(result.players.map(player => player.id), ["player-a"]);
+  assert.ok(!fetchedCollections.some(path => path.endsWith("/members")));
+  assert.ok(!fetchedCollections.some(path => path.endsWith("/sessions")));
+  assert.ok(!fetchedCollections.some(path => path.endsWith("/drillCards")));
+  assert.ok(!fetchedCollections.some(path => path.endsWith("/privateObservations")));
+});
+
+test("legacy parent roles render the family workspace", () => {
+  const model = { state: { players: [], games: [], families: [], guardians: [], observations: [], rsvps: [], volunteerSlots: [] } };
+  const vm = new AppViewModel(model, { user: { uid: "legacy-parent" }, membership: { role: "parent", familyId: "family-a" } });
+  assert.equal(vm.role, "family");
+  assert.equal(vm.defaultRoute, "family-home");
 });
 
 test("roster ingestion groups families and preserves coach invitations", async () => {

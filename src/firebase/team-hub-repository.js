@@ -2,6 +2,9 @@ import { teamModels } from "./firestore-model.js";
 import { BroadcastService } from "./broadcast-service.js";
 import { MessageService } from "./message-service.js";
 
+const coachRoles = new Set(["headCoach", "assistantCoach"]);
+const isCoachMembership = membership => coachRoles.has(membership?.role);
+
 async function privateId(prefix, value) {
   const bytes = new TextEncoder().encode(value);
   const digest = new Uint8Array(await crypto.subtle.digest("SHA-256", bytes));
@@ -44,35 +47,34 @@ export class TeamHubRepository {
     }, this.context);
   }
   async loadTeamHub(membership) {
-    const playerRequest = membership.role === "guardian"
-      ? this.#loadGuardianPlayers(membership)
-      : this.firestore.fetchAll(teamModels.player, this.context);
-    const familyRequest = membership.role === "guardian"
-      ? (membership.familyId ? this.firestore.fetch(teamModels.family, membership.familyId, this.context).then(value => value ? [value] : []) : Promise.resolve([]))
-      : this.firestore.fetchAll(teamModels.family, this.context);
-    const guardianRequest = membership.role === "guardian"
-      ? Promise.all((membership.guardianIds || []).map(id => this.firestore.fetch(teamModels.guardian, id, this.context))).then(values => values.filter(Boolean))
-      : this.firestore.fetchAll(teamModels.guardian, this.context);
-    const messageRequest = membership.role === "guardian" ? this.#loadGuardianMessages(membership) : this.firestore.fetchAll(teamModels.message, this.context);
-    const memberRequest = membership.role !== "guardian" ? this.firestore.fetchAll(teamModels.member, this.context) : Promise.resolve([]);
+    const isCoach = isCoachMembership(membership);
+    const playerRequest = isCoach ? this.firestore.fetchAll(teamModels.player, this.context) : this.#loadGuardianPlayers(membership);
+    const familyRequest = isCoach
+      ? this.firestore.fetchAll(teamModels.family, this.context)
+      : (membership.familyId ? this.firestore.fetch(teamModels.family, membership.familyId, this.context).then(value => value ? [value] : []) : Promise.resolve([]));
+    const guardianRequest = isCoach
+      ? this.firestore.fetchAll(teamModels.guardian, this.context)
+      : Promise.all((membership.guardianIds || []).map(id => this.firestore.fetch(teamModels.guardian, id, this.context))).then(values => values.filter(Boolean));
+    const messageRequest = isCoach ? this.firestore.fetchAll(teamModels.message, this.context) : this.#loadGuardianMessages(membership);
+    const memberRequest = isCoach ? this.firestore.fetchAll(teamModels.member, this.context) : Promise.resolve([]);
     const [team, families, guardians, members, players, games, sessions, volunteerSlots, broadcasts, messages, drillCards] = await Promise.all([
       this.firestore.fetch(teamModels.team, this.teamId),
       familyRequest, guardianRequest, memberRequest, playerRequest,
       this.firestore.fetchAll(teamModels.event, this.context),
-      membership.role === "guardian" ? Promise.resolve([]) : this.firestore.fetchAll(teamModels.session, this.context),
+      isCoach ? this.firestore.fetchAll(teamModels.session, this.context) : Promise.resolve([]),
       this.firestore.fetchAll(teamModels.volunteerSlot, this.context),
       this.firestore.fetchAll(teamModels.broadcast, this.context),
       messageRequest,
-      membership.role === "guardian" ? Promise.resolve([]) : this.firestore.fetchAll(teamModels.drillCard, this.context),
+      isCoach ? this.firestore.fetchAll(teamModels.drillCard, this.context) : Promise.resolve([]),
     ]);
     if (!team) throw new Error(`Team ${this.teamId} was not found.`);
     const observations = (await Promise.all(players.map(async player => {
       const shared = await this.firestore.fetchAll(teamModels.sharedObservation, { ...this.context, playerId: player.id });
-      const privateItems = membership.role === "guardian" ? [] : await this.firestore.fetchAll(teamModels.privateObservation, { ...this.context, playerId: player.id });
+      const privateItems = isCoach ? await this.firestore.fetchAll(teamModels.privateObservation, { ...this.context, playerId: player.id }) : [];
       return [...shared.map(item => ({ ...item, playerId: player.id, shared: true })), ...privateItems.map(item => ({ ...item, playerId: player.id, shared: false }))];
     }))).flat();
     const rsvps = (await Promise.all(games.map(async event => {
-      if (membership.role !== "guardian") {
+      if (isCoach) {
         const items = await this.firestore.fetchAll(teamModels.rsvp, { ...this.context, eventId: event.id });
         return items.map(item => ({ ...item, gameId: event.id }));
       }
@@ -101,7 +103,7 @@ export class TeamHubRepository {
   saveDrillCard(value) { return this.firestore.upsert(teamModels.drillCard, value, this.context); }
   subscribeBroadcasts(onValue, onError) { return this.firestore.subscribe(teamModels.broadcast, [], this.context, onValue, onError); }
   subscribeMessages(membership, onValue, onError) {
-    if (membership.role !== "guardian") return this.firestore.subscribe(teamModels.message, [], this.context, onValue, onError);
+    if (isCoachMembership(membership)) return this.firestore.subscribe(teamModels.message, [], this.context, onValue, onError);
     const sources = [];
     if (membership.familyId) sources.push({ field: "familyId", value: membership.familyId });
     (membership.guardianIds || []).forEach(guardianId => sources.push({ field: "guardianId", value: guardianId }));

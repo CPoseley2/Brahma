@@ -19,6 +19,7 @@ async function seed() {
     await setDoc(doc(db, path("members/assistant")), { role: "assistantCoach", familyId: null, active: true, email: "assistant@example.com" });
     await setDoc(doc(db, path("members/guardian-a")), { role: "guardian", familyId: "family-a", active: true, email: "a@example.com" });
     await setDoc(doc(db, path("members/guardian-b")), { role: "guardian", familyId: "family-b", active: true, email: "b@example.com" });
+    await setDoc(doc(db, path("members/legacy-parent")), { role: "parent", familyId: "family-a", active: true, email: "legacy@example.com" });
     await setDoc(doc(db, path("members/guardian-one")), { role: "guardian", familyId: null, playerIds: ["player-a"], guardianIds: ["relationship-one"], active: true, email: "one@example.com" });
     await setDoc(doc(db, path("members/guardian-two")), { role: "guardian", familyId: null, playerIds: ["player-a"], guardianIds: ["relationship-two"], active: true, email: "two@example.com" });
     await setDoc(doc(db, path("players/player-a")), { firstName: "Alpha", familyId: "family-a" });
@@ -76,6 +77,7 @@ describe("team privacy", () => {
   });
   test("members can read event slots to calculate availability", async () => {
     await assertSucceeds(getDocs(collection(auth("guardian-a", "a@example.com"), path("events/event-1/slots"))));
+    await assertSucceeds(getDocs(collection(auth("legacy-parent", "legacy@example.com"), path("events/event-1/slots"))));
   });
   test("guardians can read team broadcasts", async () => assertSucceeds(getDoc(doc(auth("guardian-a", "a@example.com"), path("broadcasts/broadcast-1")))));
   test("members can list team broadcasts", async () => {
