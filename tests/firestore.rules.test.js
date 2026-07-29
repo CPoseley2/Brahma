@@ -79,6 +79,19 @@ describe("team privacy", () => {
     await assertSucceeds(getDocs(collection(auth("guardian-a", "a@example.com"), path("events/event-1/slots"))));
     await assertSucceeds(getDocs(collection(auth("legacy-parent", "legacy@example.com"), path("events/event-1/slots"))));
   });
+  test("a legacy parent can complete every Firestore read used during startup", async () => {
+    const db = auth("legacy-parent", "legacy@example.com");
+    await assertSucceeds(getDoc(doc(db, `teams/${teamId}`)));
+    await assertSucceeds(getDoc(doc(db, path("families/family-a"))));
+    await assertSucceeds(getDocs(query(collection(db, path("players")), where("familyId", "==", "family-a"))));
+    await assertSucceeds(getDocs(collection(db, path("events"))));
+    await assertSucceeds(getDocs(collection(db, path("volunteerSlots"))));
+    await assertSucceeds(getDocs(collection(db, path("broadcasts"))));
+    await assertSucceeds(getDocs(query(collection(db, path("messages")), where("familyId", "==", "family-a"))));
+    await assertSucceeds(getDocs(collection(db, path("players/player-a/sharedObservations"))));
+    await assertSucceeds(getDoc(doc(db, path("events/event-1/rsvps/player-a"))));
+    await assertSucceeds(getDocs(collection(db, path("events/event-1/slots"))));
+  });
   test("guardians can read team broadcasts", async () => assertSucceeds(getDoc(doc(auth("guardian-a", "a@example.com"), path("broadcasts/broadcast-1")))));
   test("members can list team broadcasts", async () => {
     await assertSucceeds(getDocs(collection(auth("guardian-a", "a@example.com"), path("broadcasts"))));

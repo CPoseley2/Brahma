@@ -7,7 +7,7 @@ service cloud.firestore {
     function member(teamId) { return get(memberPath(teamId)).data; }
     function isCoach(teamId) { return isMember(teamId) && member(teamId).role in ['headCoach', 'assistantCoach']; }
     function isHeadCoach(teamId) { return isMember(teamId) && member(teamId).role == 'headCoach'; }
-    function familyId(teamId) { return member(teamId).familyId; }
+    function familyId(teamId) { return member(teamId).get('familyId', null); }
     function hasPlayerAccess(teamId, playerId) {
       return isMember(teamId) && (
         playerId in member(teamId).get('playerIds', [])
@@ -81,7 +81,12 @@ service cloud.firestore {
       }
 
       match /players/{playerId} {
-        allow read: if isCoach(teamId) || hasPlayerAccess(teamId, playerId);
+        allow get: if isCoach(teamId) || hasPlayerAccess(teamId, playerId);
+        allow list: if isCoach(teamId) || (
+          isMember(teamId)
+          && familyId(teamId) != null
+          && resource.data.familyId == familyId(teamId)
+        );
         allow write: if isCoach(teamId);
 
         match /sharedObservations/{observationId} {
