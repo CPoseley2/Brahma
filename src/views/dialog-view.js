@@ -1,4 +1,4 @@
-import { escapeHtml, formatDate, formatTime, todayIso, uid } from "../shared/format.js";
+import { escapeHtml, formatDate, formatDateTime, formatTime, todayIso, uid } from "../shared/format.js";
 
 const formValue = (form, name) => form.elements.namedItem(name).value;
 const setValues = (form, item, names) => names.forEach(name => { form.elements.namedItem(name).value = item?.[name] ?? ""; });
@@ -94,8 +94,12 @@ export class DialogView {
     const addButton = section.querySelector("[data-action=add-guardian]");
     addButton.classList.toggle("hidden", !this.vm.isHeadCoach);
     const player = this.vm.player(playerId);
+    const primaryMember = this.vm.memberForEmail(player?.familyEmail);
+    const primaryStatus = primaryMember
+      ? `<span class="badge blue guardian-status">Joined</span><small class="muted">${primaryMember.lastLoginAt ? `Last login ${formatDateTime(primaryMember.lastLoginAt)}` : "Last login not recorded yet"}</small>`
+      : player?.familyEmail ? `<span class="badge gold guardian-status">Invited</span><small class="muted">No successful login recorded.</small>` : "";
     section.querySelector("#playerPrimaryContact").innerHTML = player && (player.familyEmail || player.familyPhone)
-      ? `<article class="guardian-card primary-contact-card"><div><strong>Primary roster contact</strong><span class="badge guardian-status">Contact only</span><p>${escapeHtml(player.familyEmail || "No email")}${player.familyPhone ? ` · ${escapeHtml(player.familyPhone)}` : ""}</p><small class="muted">Stored on the original roster. Add this person as a guardian to grant app access.</small></div></article>`
+      ? `<article class="guardian-card primary-contact-card"><div><strong>Primary roster contact</strong>${primaryStatus}<p>${escapeHtml(player.familyEmail || "No email")}${player.familyPhone ? ` · ${escapeHtml(player.familyPhone)}` : ""}</p></div></article>`
       : "";
     if (!playerId) {
       list.innerHTML = `<div class="empty-state">Save this player first, then reopen the profile to add guardians.</div>`;
@@ -103,12 +107,15 @@ export class DialogView {
       return;
     }
     addButton.disabled = false;
-    const members = this.vm.state.members || [];
     list.innerHTML = this.vm.guardiansForPlayer(playerId).map(guardian => {
-      const joined = members.some(member => member.active && member.email?.toLowerCase() === guardian.email.toLowerCase());
+      const member = this.vm.memberForEmail(guardian.email);
+      const joined = Boolean(member);
       const relationship = guardian.relationship.replace(/\b\w/g, character => character.toUpperCase());
       const actions = this.vm.isHeadCoach ? `<div class="guardian-card-actions"><button type="button" class="button small" data-action="edit-guardian" data-guardian-id="${escapeHtml(guardian.id)}">Edit</button><button type="button" class="button small danger" data-action="revoke-guardian" data-guardian-id="${escapeHtml(guardian.id)}">Revoke</button></div>` : "";
-      return `<article class="guardian-card"><div><strong>${escapeHtml(guardian.name)}</strong><span class="badge ${joined ? "blue" : "gold"} guardian-status">${joined ? "Joined" : "Invited"}</span><p>${escapeHtml(relationship)} · <span class="guardian-email">${escapeHtml(guardian.email)}</span></p></div>${actions}</article>`;
+      const login = joined
+        ? `<small class="muted">${member.lastLoginAt ? `Last login ${formatDateTime(member.lastLoginAt)}` : "Last login not recorded yet"}</small>`
+        : `<small class="muted">Invitation has not been accepted.</small>`;
+      return `<article class="guardian-card"><div><strong>${escapeHtml(guardian.name)}</strong><span class="badge ${joined ? "blue" : "gold"} guardian-status">${joined ? "Joined" : "Invited"}</span><p>${escapeHtml(relationship)} · <span class="guardian-email">${escapeHtml(guardian.email)}</span></p>${login}</div>${actions}</article>`;
     }).join("") || `<div class="empty-state">No guardians have been invited for this player.</div>`;
   }
   async #saveGuardian(event) {

@@ -15,7 +15,18 @@ export class TeamHubRepository {
     this.messages = new MessageService(firestore);
   }
   get context() { return { teamId: this.teamId }; }
-  fetchMembership(uid) { return this.firestore.fetch(teamModels.member, uid, this.context); }
+  async fetchMembership(uid) {
+    const membership = await this.firestore.fetch(teamModels.member, uid, this.context);
+    if (!membership?.active) return membership;
+    const lastLoginAt = new Date().toISOString();
+    try {
+      await this.firestore.update(teamModels.member, uid, { lastLoginAt }, this.context);
+      return { ...membership, lastLoginAt };
+    } catch (error) {
+      console.warn("Could not record member login activity", error);
+      return membership;
+    }
+  }
   async acceptInvite(user) {
     if (!user.email || !user.emailVerified) throw new Error("A verified email address is required.");
     const invite = await this.firestore.fetch(teamModels.invite, user.email.toLowerCase(), this.context);
@@ -27,6 +38,8 @@ export class TeamHubRepository {
       familyId: invite.familyId ?? null,
       playerIds: invite.playerIds || [],
       guardianIds: invite.guardianIds || [],
+      joinedAt: new Date().toISOString(),
+      lastLoginAt: new Date().toISOString(),
       active: true,
     }, this.context);
   }
@@ -41,7 +54,7 @@ export class TeamHubRepository {
       ? Promise.all((membership.guardianIds || []).map(id => this.firestore.fetch(teamModels.guardian, id, this.context))).then(values => values.filter(Boolean))
       : this.firestore.fetchAll(teamModels.guardian, this.context);
     const messageRequest = membership.role === "guardian" ? this.#loadGuardianMessages(membership) : this.firestore.fetchAll(teamModels.message, this.context);
-    const memberRequest = membership.role === "headCoach" ? this.firestore.fetchAll(teamModels.member, this.context) : Promise.resolve([]);
+    const memberRequest = membership.role !== "guardian" ? this.firestore.fetchAll(teamModels.member, this.context) : Promise.resolve([]);
     const [team, families, guardians, members, players, games, sessions, volunteerSlots, broadcasts, messages, drillCards] = await Promise.all([
       this.firestore.fetch(teamModels.team, this.teamId),
       familyRequest, guardianRequest, memberRequest, playerRequest,

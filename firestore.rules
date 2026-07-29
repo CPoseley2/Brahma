@@ -35,7 +35,7 @@ service cloud.firestore {
       allow update: if isCoach(teamId);
 
       match /members/{userId} {
-        allow read: if isHeadCoach(teamId) || (signedIn() && request.auth.uid == userId);
+        allow read: if isCoach(teamId) || (signedIn() && request.auth.uid == userId);
         allow create: if signedIn() && request.auth.uid == userId && validOwnInvite(teamId)
           && request.resource.data.email == request.auth.token.email
           && request.resource.data.role == get(invitePath(teamId)).data.role
@@ -43,7 +43,14 @@ service cloud.firestore {
           && request.resource.data.playerIds == get(invitePath(teamId)).data.get('playerIds', [])
           && request.resource.data.guardianIds == get(invitePath(teamId)).data.get('guardianIds', [])
           && request.resource.data.active == true;
-        allow update, delete: if isHeadCoach(teamId);
+        allow update: if isHeadCoach(teamId) || (
+          signedIn()
+          && request.auth.uid == userId
+          && resource.data.active == true
+          && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['lastLoginAt'])
+          && request.resource.data.lastLoginAt is string
+        );
+        allow delete: if isHeadCoach(teamId);
       }
 
       match /invites/{email} {

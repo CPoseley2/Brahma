@@ -54,6 +54,14 @@ test("only the head coach can add a guardian relationship", async () => {
   );
 });
 
+test("coach roster membership lookup reports accepted guardian accounts", () => {
+  const modelState = state();
+  modelState.members.push({ id: "joined-user", email: "Guardian@Example.com", role: "guardian", active: true, lastLoginAt: "2026-07-29T20:00:00.000Z" });
+  const vm = new AppViewModel({ state: modelState }, { user: { uid: "coach" }, membership: { role: "headCoach", familyId: null } });
+  assert.equal(vm.memberForEmail("guardian@example.com")?.id, "joined-user");
+  assert.equal(vm.memberForEmail("not-joined@example.com"), null);
+});
+
 test("a coach can create a team-wide broadcast", async () => {
   let saved;
   const model = { state: state(), sendBroadcast: async value => { saved = value; model.state.broadcasts.push(value); } };

@@ -98,6 +98,10 @@ export class AppViewModel extends EventTarget {
   }
 
   player(id) { return this.state.players.find(player => player.id === id); }
+  memberForEmail(email) {
+    const normalized = String(email || "").trim().toLowerCase();
+    return normalized ? (this.state.members || []).find(member => member.active && member.email?.toLowerCase() === normalized) || null : null;
+  }
   lastObservation(playerId, sharedOnly = false) {
     return this.state.observations.filter(item => item.playerId === playerId && (!sharedOnly || item.shared))
       .sort((a, b) => b.date.localeCompare(a.date))[0] || null;

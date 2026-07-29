@@ -1,4 +1,4 @@
-import { ageLabel, escapeHtml, formatDate, formatTime } from "../shared/format.js";
+import { ageLabel, escapeHtml, formatDate, formatDateTime, formatTime } from "../shared/format.js";
 
 const empty = message => `<div class="empty-state">${message}</div>`;
 const eventCard = game => `<div class="list-card"><div><div class="name">${formatDate(game.date)} · ${formatTime(game.time)}</div><p>${escapeHtml(game.type)} · ${escapeHtml(game.opponent || "TBD")} · ${escapeHtml(game.location || "Location TBD")}</p></div></div>`;
@@ -94,11 +94,20 @@ export class CoachView {
       .sort((a, b) => a.lastName.localeCompare(b.lastName));
     this.root.querySelector("#rosterBody").innerHTML = players.map(player => {
       const guardians = this.vm.guardiansForPlayer(player.id);
+      const primaryMember = this.vm.memberForEmail(player.familyEmail);
+      const primaryAccess = primaryMember
+        ? `<span class="badge blue">Joined</span><span class="small muted access-time">${primaryMember.lastLoginAt ? `Last login ${formatDateTime(primaryMember.lastLoginAt)}` : "Last login not recorded yet"}</span>`
+        : player.familyEmail ? `<span class="badge gold">Invited</span>` : "";
       const primaryContact = player.familyEmail || player.familyPhone
-        ? `<strong>Primary contact</strong><br>${escapeHtml(player.familyEmail || "No email")}${player.familyPhone ? `<br>${escapeHtml(player.familyPhone)}` : ""}`
+        ? `<strong>Primary contact</strong> ${primaryAccess}<br>${escapeHtml(player.familyEmail || "No email")}${player.familyPhone ? `<br>${escapeHtml(player.familyPhone)}` : ""}`
         : `<span class="muted">No primary contact</span>`;
       const guardianSummary = guardians.length
-        ? `<div class="roster-guardian-summary"><strong>${guardians.length} app guardian${guardians.length === 1 ? "" : "s"}</strong><br><span class="small muted">${escapeHtml(guardians.map(guardian => guardian.name).join(", "))}</span></div>`
+        ? `<div class="roster-guardian-summary"><strong>${guardians.length} app guardian${guardians.length === 1 ? "" : "s"}</strong>${guardians.map(guardian => {
+          const member = this.vm.memberForEmail(guardian.email);
+          const status = member ? `<span class="badge blue">Joined</span>` : `<span class="badge gold">Invited</span>`;
+          const login = member ? `<span class="small muted access-time">${member.lastLoginAt ? `Last login ${formatDateTime(member.lastLoginAt)}` : "Last login not recorded yet"}</span>` : "";
+          return `<div class="roster-guardian-access"><span>${escapeHtml(guardian.name)}</span>${status}${login}</div>`;
+        }).join("")}</div>`
         : `<div class="roster-guardian-summary"><span class="small muted">No scoped app access added</span></div>`;
       return `<tr><td><span class="name">${escapeHtml(player.firstName)} ${escapeHtml(player.lastName)}</span></td><td><span class="badge">${ageLabel(player.dateOfBirth)}</span></td><td>${formatDate(player.dateOfBirth)}</td><td>${primaryContact}${guardianSummary}</td><td><span class="badge ${player.active ? "" : "gray"}">${player.active ? "Active" : "Inactive"}</span></td><td><button class="button small" data-action="edit-player" data-id="${player.id}">Edit</button></td></tr>`;
     }).join("") || `<tr><td colspan="6">${empty("No roster entries match.")}</td></tr>`;

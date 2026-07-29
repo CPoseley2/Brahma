@@ -94,6 +94,8 @@ The head coach can open any player from **Roster** and use the **Guardians** sec
 
 Each relationship grants access only to the named player's shared development story and stats. Revoking a relationship removes that player and conversation from the invitation and any existing membership, while preserving other player relationships held by the same email.
 
+The roster distinguishes an outstanding **Invited** relationship from a **Joined** guardian account. A successful authenticated session updates `members/{uid}.lastLoginAt`, which coaches can see beside that guardian. Existing memberships created before this field was introduced show “Last login not recorded yet” until the account signs in again. Guardians can update only their own login timestamp and cannot read another guardian's membership activity.
+
 ## Roster import
 
 The head coach can choose **Import roster** from the dashboard or open **Data**. CSV and `.xlsx` files must contain these columns:

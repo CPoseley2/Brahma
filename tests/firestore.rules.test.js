@@ -77,6 +77,11 @@ describe("team privacy", () => {
     await assertSucceeds(getDocs(collection(auth("guardian-a", "a@example.com"), path("broadcasts"))));
     await assertSucceeds(getDocs(collection(auth("coach", "coach@example.com"), path("broadcasts"))));
   });
+  test("coaches can read guardian membership status but guardians cannot read each other", async () => {
+    await assertSucceeds(getDocs(collection(auth("assistant", "assistant@example.com"), path("members"))));
+    await assertSucceeds(getDoc(doc(auth("guardian-one", "one@example.com"), path("members/guardian-one"))));
+    await assertFails(getDoc(doc(auth("guardian-one", "one@example.com"), path("members/guardian-two"))));
+  });
   test("drill-card artwork is a coach-only coaching tool", async () => {
     await assertSucceeds(getDoc(doc(auth("coach", "coach@example.com"), path("drillCards/gates-galore"))));
     await assertFails(getDoc(doc(auth("guardian-a", "a@example.com"), path("drillCards/gates-galore"))));
@@ -97,6 +102,12 @@ describe("team privacy", () => {
 
 describe("authorized writes", () => {
   test("guardians cannot edit events", async () => assertFails(updateDoc(doc(auth("guardian-a", "a@example.com"), path("events/event-1")), { status: "Canceled" })));
+  test("members can record only their own last login activity", async () => {
+    const db = auth("guardian-one", "one@example.com");
+    await assertSucceeds(updateDoc(doc(db, path("members/guardian-one")), { lastLoginAt: "2026-07-29T20:00:00.000Z" }));
+    await assertFails(updateDoc(doc(db, path("members/guardian-one")), { role: "headCoach" }));
+    await assertFails(updateDoc(doc(db, path("members/guardian-two")), { lastLoginAt: "2026-07-29T20:00:00.000Z" }));
+  });
   test("guardians can RSVP only for their own player", async () => {
     const db = auth("guardian-a", "a@example.com");
     await assertSucceeds(setDoc(doc(db, path("events/event-1/rsvps/player-a")), { playerId: "player-a", userId: "guardian-a", status: "yes" }));

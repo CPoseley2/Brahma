@@ -2,6 +2,19 @@ import { test } from "node:test";
 import assert from "node:assert/strict";
 import { TeamHubRepository } from "../src/firebase/team-hub-repository.js";
 
+test("loading an active membership records the successful login time", async () => {
+  let updated;
+  const firestore = {
+    fetch: async () => ({ id: "guardian-user", email: "guardian@example.com", role: "guardian", active: true }),
+    update: async (_model, id, fields) => { updated = { id, ...fields }; },
+  };
+  const repository = new TeamHubRepository(firestore, "fair-oaks-u6");
+  const membership = await repository.fetchMembership("guardian-user");
+  assert.equal(updated.id, "guardian-user");
+  assert.match(updated.lastLoginAt, /^\d{4}-\d{2}-\d{2}T/);
+  assert.equal(membership.lastLoginAt, updated.lastLoginAt);
+});
+
 test("roster ingestion groups families and preserves coach invitations", async () => {
   const saved = [];
   const firestore = {
