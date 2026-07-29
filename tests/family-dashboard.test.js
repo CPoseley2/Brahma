@@ -51,8 +51,9 @@ const makeApp = () => ({
     games: [
       { id: "past", date: "2026-07-01", time: "17:00", status: "Scheduled" },
       { id: "canceled", date: "2026-07-29", time: "17:00", status: "Canceled" },
-      { id: "next", date: "2026-07-30", time: "17:00", status: "Scheduled", type: "Practice" },
+      { id: "next", date: "2026-07-30", time: "17:00", status: "Scheduled", type: "Practice", slotCapacity: 10 },
     ],
+    eventSlots: Array.from({ length: 10 }, (_, index) => ({ id: `slot-${index + 1}`, eventId: "next", playerId: index === 0 ? "player-own" : null })),
     rsvps: [{ gameId: "next", playerId: "player-own", status: "yes" }],
     volunteerSlots: [
       { id: "open", assigneeFamilyId: null },
@@ -60,6 +61,11 @@ const makeApp = () => ({
     ],
     broadcasts: [{ id: "news", title: "Pizza night", sentAt: "2026-07-27T10:00:00Z" }],
     messages: [{ id: "message", familyId: "family-own" }],
+  },
+  eventAvailability() {
+    const slots = this.state.eventSlots.filter(slot => slot.eventId === "next");
+    const assigned = slots.filter(slot => slot.playerId).length;
+    return { limited: true, capacity: 10, assigned, available: 10 - assigned };
   },
 });
 
@@ -78,6 +84,7 @@ test("the family dashboard chooses the next active event and the player's own RS
   assert.equal(snapshot.nextEvent.id, "next");
   assert.equal(snapshot.nextEvent.when, "In 2 days");
   assert.equal(snapshot.nextEvent.rsvp, "yes");
+  assert.equal(snapshot.nextEvent.available, 9);
   assert.equal(snapshot.actions.openVolunteers, 1);
   assert.equal(snapshot.actions.familyVolunteers, 1);
 });

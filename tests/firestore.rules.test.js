@@ -25,9 +25,11 @@ async function seed() {
     await setDoc(doc(db, path("players/player-b")), { firstName: "Beta", familyId: "family-b" });
     await setDoc(doc(db, path("players/player-a/sharedObservations/shared-1")), { celebration: "Great play" });
     await setDoc(doc(db, path("players/player-a/privateObservations/private-1")), { privateNote: "Coach only" });
-    await setDoc(doc(db, path("events/event-1")), { type: "Game", status: "Scheduled" });
-    await setDoc(doc(db, path("events/event-1/rsvps/player-a")), { playerId: "player-a", userId: "guardian-a", status: "yes" });
-    await setDoc(doc(db, path("events/event-1/rsvps/player-b")), { playerId: "player-b", userId: "guardian-b", status: "no" });
+    await setDoc(doc(db, path("events/event-1")), { type: "Game", status: "Scheduled", slotCapacity: 2 });
+    await setDoc(doc(db, path("events/event-1/slots/slot-001")), { eventId: "event-1", position: 1, playerId: "player-a", userId: "guardian-a", assignedAt: "2026-07-29T20:00:00.000Z" });
+    await setDoc(doc(db, path("events/event-1/slots/slot-002")), { eventId: "event-1", position: 2, playerId: null, userId: null, assignedAt: null });
+    await setDoc(doc(db, path("events/event-1/rsvps/player-a")), { gameId: "event-1", playerId: "player-a", userId: "guardian-a", status: "yes", slotId: "slot-001", updatedAt: "2026-07-29T20:00:00.000Z" });
+    await setDoc(doc(db, path("events/event-1/rsvps/player-b")), { gameId: "event-1", playerId: "player-b", userId: "guardian-b", status: "no", slotId: null, updatedAt: "2026-07-29T20:00:00.000Z" });
     await setDoc(doc(db, path("volunteerSlots/slot-1")), { role: "Snacks", assigneeFamilyId: null });
     await setDoc(doc(db, path("families/family-a")), { displayName: "Alpha family" });
     await setDoc(doc(db, path("families/family-b")), { displayName: "Beta family" });
@@ -72,6 +74,9 @@ describe("team privacy", () => {
     await assertSucceeds(getDoc(doc(db, path("events/event-1/rsvps/player-a"))));
     await assertFails(getDoc(doc(db, path("events/event-1/rsvps/player-b"))));
   });
+  test("members can read event slots to calculate availability", async () => {
+    await assertSucceeds(getDocs(collection(auth("guardian-a", "a@example.com"), path("events/event-1/slots"))));
+  });
   test("guardians can read team broadcasts", async () => assertSucceeds(getDoc(doc(auth("guardian-a", "a@example.com"), path("broadcasts/broadcast-1")))));
   test("members can list team broadcasts", async () => {
     await assertSucceeds(getDocs(collection(auth("guardian-a", "a@example.com"), path("broadcasts"))));
@@ -110,8 +115,28 @@ describe("authorized writes", () => {
   });
   test("guardians can RSVP only for their own player", async () => {
     const db = auth("guardian-a", "a@example.com");
-    await assertSucceeds(setDoc(doc(db, path("events/event-1/rsvps/player-a")), { playerId: "player-a", userId: "guardian-a", status: "yes" }));
-    await assertFails(setDoc(doc(db, path("events/event-1/rsvps/player-b")), { playerId: "player-b", userId: "guardian-a", status: "yes" }));
+    await assertSucceeds(setDoc(doc(db, path("events/event-1/rsvps/player-a")), { gameId: "event-1", playerId: "player-a", userId: "guardian-a", status: "yes", slotId: "slot-001", updatedAt: "2026-07-29T21:00:00.000Z" }));
+    await assertFails(setDoc(doc(db, path("events/event-1/rsvps/player-b")), { gameId: "event-1", playerId: "player-b", userId: "guardian-a", status: "yes", slotId: "slot-002", updatedAt: "2026-07-29T21:00:00.000Z" }));
+  });
+  test("claiming a slot and attending RSVP must commit together", async () => {
+    const db = auth("guardian-b", "b@example.com"); const batch = writeBatch(db);
+    batch.update(doc(db, path("events/event-1/slots/slot-002")), { playerId: "player-b", userId: "guardian-b", assignedAt: "2026-07-29T21:00:00.000Z" });
+    batch.set(doc(db, path("events/event-1/rsvps/player-b")), { gameId: "event-1", playerId: "player-b", userId: "guardian-b", status: "yes", slotId: "slot-002", updatedAt: "2026-07-29T21:00:00.000Z" });
+    await assertSucceeds(batch.commit());
+  });
+  test("an attending RSVP cannot claim an occupied slot or skip the slot claim", async () => {
+    const db = auth("guardian-b", "b@example.com");
+    await assertFails(setDoc(doc(db, path("events/event-1/rsvps/player-b")), { gameId: "event-1", playerId: "player-b", userId: "guardian-b", status: "yes", slotId: "slot-002", updatedAt: "2026-07-29T21:00:00.000Z" }));
+    const batch = writeBatch(db);
+    batch.update(doc(db, path("events/event-1/slots/slot-001")), { playerId: "player-b", userId: "guardian-b", assignedAt: "2026-07-29T21:00:00.000Z" });
+    batch.set(doc(db, path("events/event-1/rsvps/player-b")), { gameId: "event-1", playerId: "player-b", userId: "guardian-b", status: "yes", slotId: "slot-001", updatedAt: "2026-07-29T21:00:00.000Z" });
+    await assertFails(batch.commit());
+  });
+  test("changing attendance releases the same slot atomically", async () => {
+    const db = auth("guardian-a", "a@example.com"); const batch = writeBatch(db);
+    batch.update(doc(db, path("events/event-1/slots/slot-001")), { playerId: null, userId: null, assignedAt: null });
+    batch.set(doc(db, path("events/event-1/rsvps/player-a")), { gameId: "event-1", playerId: "player-a", userId: "guardian-a", status: "no", slotId: null, updatedAt: "2026-07-29T21:00:00.000Z" });
+    await assertSucceeds(batch.commit());
   });
   test("guardians can claim an open volunteer slot for their family", async () => assertSucceeds(updateDoc(doc(auth("guardian-a", "a@example.com"), path("volunteerSlots/slot-1")), { assigneeFamilyId: "family-a" })));
   test("an invited verified user can create only the prescribed membership", async () => {

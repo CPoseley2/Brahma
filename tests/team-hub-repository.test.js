@@ -1,6 +1,7 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import { TeamHubRepository } from "../src/firebase/team-hub-repository.js";
+import { FirestoreTeamHubModel } from "../src/models/firestore-team-hub-model.js";
 
 test("loading an active membership records the successful login time", async () => {
   let updated;
@@ -76,4 +77,62 @@ test("revoking one guardian relationship preserves another relationship for the 
   assert.equal(invite.active, true);
   assert.deepEqual(invite.playerIds, ["player-b"]);
   assert.deepEqual(invite.guardianIds, ["relationship-b"]);
+});
+
+test("adding a capacity creates deterministic slots and assigns existing attendees", async () => {
+  let batch;
+  const firestore = {
+    fetchAll: async model => model.collectionPath({ teamId: "fair-oaks-u6", eventId: "event-1" }).endsWith("/rsvps")
+      ? [{ id: "player-a", playerId: "player-a", userId: "guardian-a", status: "yes", updatedAt: "2026-07-29T20:00:00.000Z" }]
+      : [],
+    applyBatch: async (entries, deletions) => { batch = { entries, deletions }; },
+  };
+  const repository = new TeamHubRepository(firestore, "fair-oaks-u6");
+  const slots = await repository.configureEventSlots("event-1", 3);
+  assert.deepEqual(slots.map(slot => slot.id), ["slot-001", "slot-002", "slot-003"]);
+  assert.equal(slots[0].playerId, "player-a");
+  assert.equal(slots[1].playerId, null);
+  assert.equal(batch.entries.find(entry => entry.model.collectionPath({ teamId: "fair-oaks-u6", eventId: "event-1" }).endsWith("/rsvps")).value.slotId, "slot-001");
+  assert.equal(batch.deletions.length, 0);
+});
+
+test("an RSVP atomically claims an available event slot", async () => {
+  const updates = []; let saved;
+  const slot = { id: "slot-001", eventId: "event-1", position: 1, playerId: null, userId: null, assignedAt: null };
+  const firestore = {
+    fetchAll: async () => [slot],
+    transaction: async handler => handler({}, firestore),
+    fetchInTransaction: async (_transaction, model, id) => {
+      const path = model.collectionPath({ teamId: "fair-oaks-u6", eventId: "event-1" });
+      if (path.endsWith("/events")) return { id, status: "Scheduled", slotCapacity: 1 };
+      if (path.endsWith("/slots")) return slot;
+      return null;
+    },
+    updateInTransaction: (_transaction, _model, id, fields) => updates.push({ id, fields }),
+    setInTransaction: (_transaction, _model, value) => { saved = value; },
+  };
+  const repository = new TeamHubRepository(firestore, "fair-oaks-u6");
+  const result = await repository.saveRsvp({ id: "player-a", gameId: "event-1", playerId: "player-a", userId: "guardian-a", status: "yes" });
+  assert.equal(updates[0].id, "slot-001");
+  assert.equal(updates[0].fields.playerId, "player-a");
+  assert.equal(saved.slotId, "slot-001");
+  assert.equal(result.rsvp.status, "yes");
+  assert.equal(result.slots[0].playerId, "player-a");
+});
+
+test("updating one event RSVP does not overwrite the same player's other event", async () => {
+  const state = {
+    rsvps: [
+      { id: "player-a", gameId: "event-1", playerId: "player-a", status: "yes" },
+      { id: "player-a", gameId: "event-2", playerId: "player-a", status: "maybe" },
+    ],
+    eventSlots: [],
+  };
+  const repository = {
+    saveRsvp: async value => ({ rsvp: { ...value, status: "no" }, slots: [] }),
+  };
+  const model = new FirestoreTeamHubModel(repository, state, { role: "guardian" });
+  await model.upsert("rsvps", { id: "player-a", gameId: "event-2", playerId: "player-a", status: "no" });
+  assert.equal(state.rsvps.find(item => item.gameId === "event-1").status, "yes");
+  assert.equal(state.rsvps.find(item => item.gameId === "event-2").status, "no");
 });

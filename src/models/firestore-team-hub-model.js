@@ -8,7 +8,7 @@ export class FirestoreTeamHubModel {
     const actions = {
       players: () => this.repository.savePlayer(item), games: () => this.repository.saveEvent(item),
       sessions: () => this.repository.saveSession(item), volunteerSlots: () => this.repository.saveVolunteerSlot(item),
-      observations: () => this.repository.saveObservation(item), rsvps: () => this.repository.saveRsvp(item),
+      observations: () => this.repository.saveObservation(item), rsvps: () => this.#saveRsvp(item),
     };
     return actions[collection]?.() || Promise.reject(new Error(`Unsupported collection: ${collection}`));
   }
@@ -36,6 +36,7 @@ export class FirestoreTeamHubModel {
     const stops = [
       this.repository.subscribeBroadcasts(values => { this.state.broadcasts = values; onChange(); }, onError),
       this.repository.subscribeMessages(this.membership, values => { this.state.messages = values; onChange(); }, onError),
+      this.repository.subscribeEventSlots(this.state.games, values => { this.state.eventSlots = values; onChange(); }, onError),
     ];
     return () => stops.forEach(stop => stop());
   }
@@ -61,6 +62,16 @@ export class FirestoreTeamHubModel {
     result.families.forEach(family => this.#merge("families", family));
     result.players.forEach(player => this.#merge("players", player));
     return { playerCount: result.players.length, familyCount: result.families.length, inviteCount: result.inviteCount };
+  }
+  async #saveRsvp(value) {
+    const result = await this.repository.saveRsvp(value);
+    const index = this.state.rsvps.findIndex(item => item.gameId === result.rsvp.gameId && item.playerId === result.rsvp.playerId);
+    if (index >= 0) this.state.rsvps[index] = result.rsvp; else this.state.rsvps.push(result.rsvp);
+    this.state.eventSlots = [
+      ...(this.state.eventSlots || []).filter(slot => slot.eventId !== value.gameId),
+      ...result.slots,
+    ];
+    return result.rsvp;
   }
   #merge(collection, value) {
     const index = this.state[collection].findIndex(item => item.id === value.id);

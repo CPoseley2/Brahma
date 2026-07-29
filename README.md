@@ -116,6 +116,14 @@ The Schedule event editor supports one event or a weekly series with explicit st
 
 Series creation, replacement, and deletion use Firestore batches and are limited to 100 occurrences.
 
+### RSVP capacity
+
+The event editor lets a coach set **Total RSVP slots** from 1–200, or use `0` for an unlimited event. Limited events keep one slot document per available place at `teams/{teamId}/events/{eventId}/slots/{slotId}`. Existing attending players retain a place when capacity changes, and the coach cannot reduce capacity below current attendance.
+
+Guardians see remaining availability on the family home and full Schedule. Choosing **Going** atomically claims an open slot and saves the player's RSVP; concurrent claims cannot take the same place. The interface then marks the player **Attending**, while the RSVP selector remains editable. Changing to **Maybe** or **Not going** atomically releases the slot for another family.
+
+Firestore rules require the RSVP and slot claim or release to agree in the same atomic write. Guardians can change only the RSVP/slot for a player assigned to their account, while coaches retain event and capacity management access.
+
 The coach-facing **Practice Sessions** view is derived from Schedule events: only events whose type is `Practice` appear. Attendance, focus areas, and reflections are stored as session records linked by `eventId`; schedule details remain controlled by the event. Existing unlinked session records are recovered by matching their practice date and title when possible.
 
 ## Season curriculum and drill cards
@@ -179,7 +187,7 @@ npm run build
 firebase deploy --only firestore,hosting
 ```
 
-The rules tests run against the Firebase emulator and cover anonymous denial, family isolation, private observations, RSVP ownership, volunteer claims, coach access, and invite-controlled membership creation.
+The rules tests run against the Firebase emulator and cover anonymous denial, family isolation, private observations, atomic RSVP slot claims/releases, volunteer claims, coach access, and invite-controlled membership creation.
 
 ## Privacy
 

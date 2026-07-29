@@ -26,4 +26,5 @@ export const teamModels = {
   sharedObservation: defineFirestoreModel({ collectionPath: ({ teamId, playerId }) => `teams/${teamId}/players/${playerId}/sharedObservations` }),
   privateObservation: defineFirestoreModel({ collectionPath: ({ teamId, playerId }) => `teams/${teamId}/players/${playerId}/privateObservations` }),
   rsvp: defineFirestoreModel({ collectionPath: ({ teamId, eventId }) => `teams/${teamId}/events/${eventId}/rsvps` }),
+  eventSlot: defineFirestoreModel({ collectionPath: ({ teamId, eventId }) => `teams/${teamId}/events/${eventId}/slots` }),
 };

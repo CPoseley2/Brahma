@@ -9,7 +9,7 @@ export class SharedView {
     this.root.addEventListener("schedule-feedback", event => { this.scheduleMessage = event.detail.message; this.scheduleError = ""; this.renderSchedule(); });
     this.root.addEventListener("change", event => {
       const select = event.target.closest("[data-rsvp]");
-      if (select) this.vm.setRsvp(select.dataset.gameId, select.dataset.playerId, select.value);
+      if (select) this.#changeRsvp(select);
     });
   }
   async #onClick(event) {
@@ -34,11 +34,26 @@ export class SharedView {
     feedback.innerHTML = this.scheduleError ? `<div class="login-message error">${escapeHtml(this.scheduleError)}</div>` : this.scheduleMessage ? `<div class="login-message success">${escapeHtml(this.scheduleMessage)}</div>` : "";
     const games = [...this.vm.state.games].sort((a, b) => (a.date + a.time).localeCompare(b.date + b.time));
     this.root.querySelector("#gamesList").innerHTML = games.map(game => {
-      const familyActions = this.vm.role === "family" && family ? `<div class="family-rsvps">${family.players.map(player => { const current = this.vm.state.rsvps.find(item => item.gameId === game.id && item.playerId === player.id)?.status || ""; return `<div class="attendance-row"><span>${escapeHtml(player.firstName)}</span><select data-rsvp data-game-id="${game.id}" data-player-id="${player.id}"><option value="">RSVP</option><option value="yes" ${current === "yes" ? "selected" : ""}>Going</option><option value="no" ${current === "no" ? "selected" : ""}>Not going</option><option value="maybe" ${current === "maybe" ? "selected" : ""}>Maybe</option></select></div>`; }).join("")}</div>` : "";
+      const availability = this.vm.eventAvailability(game.id);
+      const availabilityBadge = availability.limited
+        ? `<span class="badge ${availability.available === 0 ? "gold" : "blue"}">${availability.available} of ${availability.capacity} slots available</span>`
+        : `<span class="badge gray">No attendance limit</span>`;
+      const familyActions = this.vm.role === "family" && family ? `<div class="family-rsvps">${family.players.map(player => {
+        const current = this.vm.state.rsvps.find(item => item.gameId === game.id && item.playerId === player.id)?.status || "";
+        const attending = current === "yes";
+        const full = availability.limited && availability.available === 0 && !attending;
+        return `<div class="attendance-row"><span>${escapeHtml(player.firstName)} ${attending ? `<span class="badge blue">Attending</span>` : ""}</span><select data-rsvp data-game-id="${game.id}" data-player-id="${player.id}"><option value="" disabled ${!current ? "selected" : ""}>Choose RSVP…</option><option value="yes" ${attending ? "selected" : ""} ${full ? "disabled" : ""}>Going${full ? " · Full" : ""}</option><option value="no" ${current === "no" ? "selected" : ""}>Not going</option><option value="maybe" ${current === "maybe" ? "selected" : ""}>Maybe</option></select></div>`;
+      }).join("")}</div>` : "";
       const seriesActions = game.seriesId ? `<button class="button small" data-action="edit-game-series" data-id="${game.id}">Edit series</button><button class="button small danger" data-action="delete-game-series" data-id="${game.id}">Delete series</button>` : "";
       const actions = this.vm.role === "coach" ? `<div class="button-row event-actions"><button class="button small" data-action="edit-game" data-id="${game.id}">Edit this event</button>${seriesActions}<button class="button small danger" data-action="delete-game" data-id="${game.id}">Delete this event</button></div>` : "";
-      return `<article class="list-card"><div><div class="name">${formatDate(game.date)} · ${formatTime(game.time)}</div><p>${escapeHtml(game.type)} · ${escapeHtml(game.opponent || "TBD")} · ${escapeHtml(game.location || "Location TBD")}</p>${game.notes ? `<p class="small muted">${escapeHtml(game.notes)}</p>` : ""}<div class="button-row event-badges"><span class="badge">${escapeHtml(game.status)}</span>${game.seriesId ? `<span class="badge blue">Recurring series</span>` : ""}</div>${familyActions}</div>${actions}</article>`;
+      return `<article class="list-card"><div><div class="name">${formatDate(game.date)} · ${formatTime(game.time)}</div><p>${escapeHtml(game.type)} · ${escapeHtml(game.opponent || "TBD")} · ${escapeHtml(game.location || "Location TBD")}</p>${game.notes ? `<p class="small muted">${escapeHtml(game.notes)}</p>` : ""}<div class="button-row event-badges"><span class="badge">${escapeHtml(game.status)}</span>${availabilityBadge}${game.seriesId ? `<span class="badge blue">Recurring series</span>` : ""}</div>${familyActions}</div>${actions}</article>`;
     }).join("") || empty("No team events have been entered yet.");
+  }
+  async #changeRsvp(select) {
+    select.disabled = true; this.scheduleError = ""; this.scheduleMessage = "";
+    try { this.scheduleMessage = await this.vm.setRsvp(select.dataset.gameId, select.dataset.playerId, select.value); }
+    catch (error) { this.scheduleError = error.message; }
+    finally { select.disabled = false; this.renderSchedule(); }
   }
   async #deleteOccurrence(id) {
     const item = this.vm.state.games.find(event => event.id === id); if (!item) return;

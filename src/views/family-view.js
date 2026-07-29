@@ -19,6 +19,8 @@ export class FamilyView {
     this.dashboard = new FamilyDashboardViewModel(vm);
     this.playerId = "";
     this.tokenId = "teamwork";
+    this.rsvpMessage = "";
+    this.rsvpError = "";
   }
 
   mount() {
@@ -30,7 +32,7 @@ export class FamilyView {
     });
     this.root.addEventListener("change", event => {
       const select = event.target.closest("[data-family-rsvp]");
-      if (select) this.vm.setRsvp(select.dataset.eventId, select.dataset.playerId, select.value);
+      if (select) this.#changeRsvp(select);
     });
   }
 
@@ -78,14 +80,21 @@ export class FamilyView {
     container.innerHTML = `<div><p class="eyebrow">${escapeHtml(nextEvent.when)}</p>
       <h2>${escapeHtml(nextEvent.type)} · ${formatDate(nextEvent.date)}</h2>
       <p>${formatTime(nextEvent.time)} · ${escapeHtml(nextEvent.location || "Location TBD")}</p>
-      <span>${escapeHtml(nextEvent.opponent || "Team event")}</span></div>
+      <span>${escapeHtml(nextEvent.opponent || "Team event")}</span>
+      <div class="family-availability">${nextEvent.limited ? `<strong>${nextEvent.available}</strong> of ${nextEvent.capacity} slots available` : "No attendance limit"}</div></div>
       <label class="family-rsvp"><span>${escapeHtml(player.firstName)}’s RSVP</span>
       <select data-family-rsvp data-event-id="${nextEvent.id}" data-player-id="${player.id}">
-      <option value="" ${!nextEvent.rsvp ? "selected" : ""}>Choose…</option>
-      <option value="yes" ${nextEvent.rsvp === "yes" ? "selected" : ""}>We’re going</option>
+      <option value="" disabled ${!nextEvent.rsvp ? "selected" : ""}>Choose…</option>
+      <option value="yes" ${nextEvent.rsvp === "yes" ? "selected" : ""} ${nextEvent.limited && nextEvent.available === 0 && nextEvent.rsvp !== "yes" ? "disabled" : ""}>We’re going${nextEvent.limited && nextEvent.available === 0 && nextEvent.rsvp !== "yes" ? " · Full" : ""}</option>
       <option value="maybe" ${nextEvent.rsvp === "maybe" ? "selected" : ""}>Maybe</option>
       <option value="no" ${nextEvent.rsvp === "no" ? "selected" : ""}>Can’t make it</option>
-      </select><button class="button" data-route="schedule">Full schedule</button></label>`;
+      </select>${nextEvent.rsvp === "yes" ? `<strong class="attending-state">✓ Attending · your spot is reserved</strong>` : ""}<button class="button" data-route="schedule">Full schedule</button>${this.rsvpError ? `<small class="rsvp-error">${escapeHtml(this.rsvpError)}</small>` : this.rsvpMessage ? `<small class="rsvp-success">${escapeHtml(this.rsvpMessage)}</small>` : ""}</label>`;
+  }
+  async #changeRsvp(select) {
+    select.disabled = true; this.rsvpMessage = ""; this.rsvpError = "";
+    try { this.rsvpMessage = await this.vm.setRsvp(select.dataset.eventId, select.dataset.playerId, select.value); }
+    catch (error) { this.rsvpError = error.message; }
+    finally { select.disabled = false; this.render(); }
   }
 
   #renderTokens({ player, tokens }) {

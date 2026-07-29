@@ -15,7 +15,7 @@ export class TeamHubModel {
     const normalized = {
       ...clone(this.seed), ...value,
       team: { ...this.seed.team, ...(value.team || {}) },
-      players: value.players || [], games: value.games || [],
+      players: value.players || [], games: value.games || [], eventSlots: value.eventSlots || [],
       volunteerSlots: value.volunteerSlots || [], sessions: value.sessions || [],
       observations: value.observations || [], rsvps: value.rsvps || [],
       broadcasts: value.broadcasts || [], messages: value.messages || [],
@@ -35,7 +35,7 @@ export class TeamHubModel {
     } catch (error) {
       console.warn("Could not restore local team data", error);
     }
-    return clone(this.seed);
+    return this.#normalize(clone(this.seed));
   }
 
   save() { this.storage.setItem(CURRENT_KEY, JSON.stringify(this.state)); }

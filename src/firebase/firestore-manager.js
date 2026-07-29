@@ -39,6 +39,16 @@ export class FirestoreManager {
     const snapshot = await getDocs(query(this.collection(model, context), ...constraints));
     return snapshot.docs.map(item => model.fromFirestore(item.id, item.data()));
   }
+  async fetchInTransaction(transaction, model, id, context = {}) {
+    const snapshot = await transaction.get(this.document(model, id, context));
+    return snapshot.exists() ? model.fromFirestore(snapshot.id, snapshot.data()) : null;
+  }
+  setInTransaction(transaction, model, value, context = {}, { merge = false } = {}) {
+    transaction.set(this.document(model, value.id, context), model.toFirestore(value), { merge });
+  }
+  updateInTransaction(transaction, model, id, fields, context = {}) {
+    transaction.update(this.document(model, id, context), fields);
+  }
   async exists(model, id, context = {}) { return (await getDoc(this.document(model, id, context))).exists(); }
   async existsWhere(model, conditions, context = {}) { return (await this.fetchWhere(model, conditions, context, { limit: 1 })).length > 0; }
   async delete(model, id, context = {}) { await deleteDoc(this.document(model, id, context)); }

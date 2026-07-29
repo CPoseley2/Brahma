@@ -23,10 +23,10 @@ export class EventDialogView {
         const days = draft.seriesWeekdays.map(day => weekdayLabels[day].slice(0, 3)).join(" and ");
         const scopeNote = draft.editScope === "series" ? " Saving will reconcile the date pattern and apply the shared details to every occurrence." : "";
         feedback.className = "summary-box";
-        feedback.innerHTML = `<strong>${dates.length} ${escapeHtml(draft.type.toLowerCase())} events</strong><br>${escapeHtml(days)} from ${formatDate(dates[0])} through ${formatDate(dates.at(-1))}. All occurrences use ${escapeHtml(draft.time ? formatTime(draft.time) : "the same time")}, ${escapeHtml(draft.location || "the same location")}, title, and notes.${escapeHtml(scopeNote)}`;
+        feedback.innerHTML = `<strong>${dates.length} ${escapeHtml(draft.type.toLowerCase())} events</strong><br>${escapeHtml(days)} from ${formatDate(dates[0])} through ${formatDate(dates.at(-1))}. All occurrences use ${escapeHtml(draft.time ? formatTime(draft.time) : "the same time")}, ${escapeHtml(draft.location || "the same location")}, and ${draft.slotCapacity ? `${draft.slotCapacity} RSVP slots` : "unlimited RSVPs"}.${escapeHtml(scopeNote)}`;
       } else {
         feedback.className = "summary-box";
-        feedback.innerHTML = `<strong>One ${escapeHtml(draft.type.toLowerCase())} event</strong><br>${formatDate(dates[0])}${draft.time ? ` at ${escapeHtml(draft.time)}` : ""}. Only this occurrence will be saved.`;
+        feedback.innerHTML = `<strong>One ${escapeHtml(draft.type.toLowerCase())} event</strong><br>${formatDate(dates[0])}${draft.time ? ` at ${escapeHtml(draft.time)}` : ""} · ${draft.slotCapacity ? `${draft.slotCapacity} RSVP slots` : "Unlimited RSVPs"}.`;
       }
     } catch (error) {
       this.previewError = error.message; feedback.className = "login-message error"; feedback.textContent = error.message;
@@ -41,6 +41,7 @@ export class EventDialogView {
     this.busy = false; this.saveError = ""; this.form.reset();
     setValue(this.form, "id", item?.id); setValue(this.form, "seriesId", item?.seriesId); setValue(this.form, "editScope", seriesEdit ? "series" : "occurrence");
     setValue(this.form, "type", item?.type || "Practice"); setValue(this.form, "status", item?.status || "Scheduled");
+    setValue(this.form, "slotCapacity", item?.slotCapacity || 0);
     setValue(this.form, "scheduleMode", seriesEdit ? "weekly" : "once");
     setValue(this.form, "date", item?.date || todayIso());
     setValue(this.form, "seriesStartDate", item?.seriesStartDate || item?.occurrenceDate || item?.date || todayIso());
@@ -60,6 +61,7 @@ export class EventDialogView {
       seriesStartDate: value("seriesStartDate"), seriesEndDate: value("seriesEndDate"),
       seriesWeekdays: [...this.form.querySelectorAll("[name=seriesWeekday]:checked")].map(input => Number(input.value)),
       time: value("time"), opponent: value("opponent").trim(), location: value("location").trim(), notes: value("notes").trim(),
+      slotCapacity: Number(value("slotCapacity") || 0),
     };
   }
   async #save() {

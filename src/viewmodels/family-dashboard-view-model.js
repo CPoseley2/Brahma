@@ -110,7 +110,7 @@ export class FamilyDashboardViewModel {
     const when = days === 0 ? "Today" : days === 1 ? "Tomorrow" : `In ${days} days`;
     const rsvp = this.app.state.rsvps
       .find(item => item.gameId === event.id && item.playerId === playerId)?.status || "";
-    return { ...event, when, rsvp };
+    return { ...event, ...this.app.eventAvailability(event.id), when, rsvp };
   }
 
   #familyActions(familyId) {

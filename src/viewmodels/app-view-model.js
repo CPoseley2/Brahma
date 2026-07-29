@@ -137,13 +137,30 @@ export class AppViewModel extends EventTarget {
     this.#persist(this.model.upsert ? this.model.upsert(collection, item) : this.model.save()); this.changed();
   }
   remove(collection, id) { this.state[collection] = this.state[collection].filter(item => item.id !== id); this.#persist(this.model.remove ? this.model.remove(collection, id) : this.model.save()); this.changed(); }
-  setRsvp(gameId, playerId, status) {
-    const existing = this.state.rsvps.find(item => item.gameId === gameId && item.playerId === playerId);
-    if (existing) existing.status = status;
-    else this.state.rsvps.push({ id: playerId, gameId, playerId, userId: this.userId, status });
-    const item = existing || this.state.rsvps.find(value => value.gameId === gameId && value.playerId === playerId);
-    if (this.userId) item.userId = this.userId;
-    this.#persist(this.model.upsert ? this.model.upsert("rsvps", item) : this.model.save()); this.changed();
+  eventAvailability(gameId) {
+    const event = this.state.games.find(item => item.id === gameId);
+    const capacity = Math.max(0, Number(event?.slotCapacity || 0));
+    const attending = (this.state.rsvps || []).filter(item => item.gameId === gameId && item.status === "yes").length;
+    if (!capacity) return { limited: false, capacity: 0, assigned: attending, available: null };
+    const eventSlots = (this.state.eventSlots || []).filter(slot => slot.eventId === gameId);
+    const assigned = eventSlots.length
+      ? eventSlots.filter(slot => slot.playerId).length
+      : attending;
+    return { limited: true, capacity, assigned, available: Math.max(0, capacity - assigned) };
+  }
+  async setRsvp(gameId, playerId, status) {
+    if (!["yes", "no", "maybe"].includes(status)) throw new Error("Choose Going, Maybe, or Not going.");
+    const existing = (this.state.rsvps || []).find(item => item.gameId === gameId && item.playerId === playerId);
+    const item = { ...existing, id: playerId, gameId, playerId, userId: this.userId, status };
+    let persisted = item;
+    if (this.model.upsert) persisted = await this.model.upsert("rsvps", item) || item; else {
+      this.upsertLocal("rsvps", item); await this.model.save();
+    }
+    this.state.rsvps ||= [];
+    const saved = this.state.rsvps.find(value => value.gameId === gameId && value.playerId === playerId);
+    if (saved) Object.assign(saved, persisted); else this.state.rsvps.push(persisted);
+    this.changed();
+    return status === "yes" ? "You’re attending and a spot is reserved." : status === "maybe" ? "Your RSVP is set to Maybe." : "Your RSVP is set to Not going.";
   }
   claimVolunteer(id) { const slot = this.state.volunteerSlots.find(item => item.id === id); if (slot && !slot.assigneeFamilyId) { slot.assigneeFamilyId = this.selectedFamily?.id || null; this.#persist(this.model.updateVolunteer ? this.model.updateVolunteer(id, slot.assigneeFamilyId) : this.model.save()); this.changed(); } }
   releaseVolunteer(id) { const slot = this.state.volunteerSlots.find(item => item.id === id); if (slot?.assigneeFamilyId === this.selectedFamily?.id) { slot.assigneeFamilyId = null; this.#persist(this.model.updateVolunteer ? this.model.updateVolunteer(id, null) : this.model.save()); this.changed(); } }
@@ -246,6 +263,13 @@ export class AppViewModel extends EventTarget {
   previewEventSchedule(draft) { return scheduleDates(draft); }
   async saveEventSchedule(draft, existingId = "", scope = "occurrence") {
     const dates = scheduleDates(draft);
+    const capacity = Number(draft.slotCapacity || 0);
+    if (!Number.isInteger(capacity) || capacity < 0 || capacity > 200) throw new Error("RSVP slots must be a whole number from 0 to 200.");
+    const affected = scope === "series" && draft.seriesId
+      ? this.state.games.filter(event => event.seriesId === draft.seriesId)
+      : this.state.games.filter(event => event.id === existingId);
+    const highestAttendance = Math.max(0, ...affected.map(event => this.eventAvailability(event.id).assigned));
+    if (capacity > 0 && capacity < highestAttendance) throw new Error(`At least ${highestAttendance} players are already attending. The slot count cannot be reduced below current attendance.`);
     if (scope === "series" && draft.seriesId) return this.#replaceEventSeries(draft, dates);
     if (draft.scheduleMode === "weekly" && !existingId) return this.#createEventSeries(draft, dates);
     const existing = this.state.games.find(event => event.id === existingId);
@@ -274,7 +298,7 @@ export class AppViewModel extends EventTarget {
     return { count: events.length, message: `Updated the full series. It now contains ${events.length} events.` };
   }
   #eventFields(draft) {
-    return { type: draft.type, status: draft.status, time: draft.time, opponent: draft.opponent, location: draft.location, notes: draft.notes };
+    return { type: draft.type, status: draft.status, time: draft.time, opponent: draft.opponent, location: draft.location, notes: draft.notes, slotCapacity: Number(draft.slotCapacity || 0) };
   }
   upsertLocal(collection, item) {
     const index = this.state[collection].findIndex(value => value.id === item.id);

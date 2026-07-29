@@ -24,6 +24,15 @@ service cloud.firestore {
     function ownsPlayer(teamId, playerId) {
       return hasPlayerAccess(teamId, playerId);
     }
+    function eventData(teamId, eventId) {
+      return get(/databases/$(database)/documents/teams/$(teamId)/events/$(eventId)).data;
+    }
+    function rsvpAfter(teamId, eventId, playerId) {
+      return getAfter(/databases/$(database)/documents/teams/$(teamId)/events/$(eventId)/rsvps/$(playerId)).data;
+    }
+    function slotAfter(teamId, eventId, slotId) {
+      return getAfter(/databases/$(database)/documents/teams/$(teamId)/events/$(eventId)/slots/$(slotId)).data;
+    }
     function invitePath(teamId) { return /databases/$(database)/documents/teams/$(teamId)/invites/$(request.auth.token.email); }
     function validOwnInvite(teamId) {
       return signedIn() && request.auth.token.email_verified == true && exists(invitePath(teamId)) && get(invitePath(teamId)).data.active == true;
@@ -89,11 +98,64 @@ service cloud.firestore {
         allow write: if isCoach(teamId);
         match /rsvps/{playerId} {
           allow read: if isCoach(teamId) || ownsPlayer(teamId, playerId);
-          allow create, update: if ownsPlayer(teamId, playerId)
+          allow create, update: if isCoach(teamId) || (
+            ownsPlayer(teamId, playerId)
+            && request.resource.data.keys().hasOnly(['playerId', 'userId', 'status', 'slotId', 'updatedAt', 'gameId'])
             && request.resource.data.playerId == playerId
             && request.resource.data.userId == request.auth.uid
-            && request.resource.data.status in ['yes', 'no', 'maybe'];
-          allow delete: if isCoach(teamId) || ownsPlayer(teamId, playerId);
+            && request.resource.data.get('gameId', eventId) == eventId
+            && request.resource.data.status in ['yes', 'no', 'maybe']
+            && request.resource.data.updatedAt is string
+            && (
+              (
+                request.resource.data.status == 'yes'
+                && (
+                  (
+                    eventData(teamId, eventId).get('slotCapacity', 0) == 0
+                    && request.resource.data.get('slotId', null) == null
+                  )
+                  || (
+                    eventData(teamId, eventId).get('slotCapacity', 0) > 0
+                    && request.resource.data.slotId is string
+                    && slotAfter(teamId, eventId, request.resource.data.slotId).playerId == playerId
+                  )
+                )
+              )
+              || (
+                request.resource.data.status in ['no', 'maybe']
+                && request.resource.data.get('slotId', null) == null
+              )
+            )
+          );
+          allow delete: if isCoach(teamId);
+        }
+        match /slots/{slotId} {
+          allow read: if isMember(teamId);
+          allow create, delete: if isCoach(teamId);
+          allow update: if isCoach(teamId) || (
+            isMember(teamId)
+            && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['playerId', 'userId', 'assignedAt'])
+            && (
+              (
+                resource.data.get('playerId', null) == null
+                && request.resource.data.playerId is string
+                && ownsPlayer(teamId, request.resource.data.playerId)
+                && request.resource.data.userId == request.auth.uid
+                && request.resource.data.assignedAt is string
+                && rsvpAfter(teamId, eventId, request.resource.data.playerId).status == 'yes'
+                && rsvpAfter(teamId, eventId, request.resource.data.playerId).slotId == slotId
+              )
+              || (
+                resource.data.get('playerId', null) is string
+                && ownsPlayer(teamId, resource.data.playerId)
+                && request.resource.data.get('playerId', null) == null
+                && request.resource.data.get('userId', null) == null
+                && request.resource.data.get('assignedAt', null) == null
+                && rsvpAfter(teamId, eventId, resource.data.playerId).status in ['no', 'maybe']
+                && rsvpAfter(teamId, eventId, resource.data.playerId).get('slotId', null) == null
+              )
+            )
+          );
         }
       }
 
