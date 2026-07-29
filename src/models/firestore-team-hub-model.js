@@ -1,0 +1,69 @@
+export class FirestoreTeamHubModel {
+  constructor(repository, state, membership) { this.repository = repository; this.state = state; this.membership = membership; }
+  static async create(repository, membership) { return new FirestoreTeamHubModel(repository, await repository.loadTeamHub(membership), membership); }
+  save() { return Promise.resolve(); }
+  replace() { throw new Error("JSON import is disabled for the live Firestore model."); }
+  reset() { throw new Error("Reset is disabled for the live Firestore model."); }
+  upsert(collection, item) {
+    const actions = {
+      players: () => this.repository.savePlayer(item), games: () => this.repository.saveEvent(item),
+      sessions: () => this.repository.saveSession(item), volunteerSlots: () => this.repository.saveVolunteerSlot(item),
+      observations: () => this.repository.saveObservation(item), rsvps: () => this.repository.saveRsvp(item),
+    };
+    return actions[collection]?.() || Promise.reject(new Error(`Unsupported collection: ${collection}`));
+  }
+  remove(collection, id) {
+    const actions = {
+      players: () => this.repository.deletePlayer(id), games: () => this.repository.deleteEvent(id),
+      sessions: () => this.repository.deleteSession(id), volunteerSlots: () => this.repository.deleteVolunteerSlot(id),
+    };
+    return actions[collection]?.() || Promise.reject(new Error(`Unsupported collection: ${collection}`));
+  }
+  saveTeam() { return this.repository.saveTeam(this.state.team); }
+  async sendBroadcast(value) { const saved = await this.repository.saveBroadcast(value); this.#merge("broadcasts", saved); return saved; }
+  async sendMessage(value) { const saved = await this.repository.saveMessage(value); this.#merge("messages", saved); return saved; }
+  async saveGuardian(value) {
+    const saved = await this.repository.saveGuardian(value, this.state);
+    this.#merge("guardians", saved);
+    return saved;
+  }
+  async revokeGuardian(value) {
+    await this.repository.revokeGuardian(value, this.state);
+    this.#merge("guardians", { ...value, active: false });
+  }
+  async saveDrillCard(value) { await this.repository.saveDrillCard(value); this.#merge("drillCards", value); return value; }
+  startMessaging(onChange, onError) {
+    const stops = [
+      this.repository.subscribeBroadcasts(values => { this.state.broadcasts = values; onChange(); }, onError),
+      this.repository.subscribeMessages(this.membership, values => { this.state.messages = values; onChange(); }, onError),
+    ];
+    return () => stops.forEach(stop => stop());
+  }
+  updateVolunteer(id, familyId) { return this.repository.updateVolunteerSlot(id, familyId); }
+  async saveEvents(events) {
+    await this.repository.saveEvents(events);
+    events.forEach(event => this.#merge("games", event));
+  }
+  async replaceEventSeries(seriesId, events) {
+    const removedIds = this.state.games.filter(event => event.seriesId === seriesId && !events.some(value => value.id === event.id)).map(event => event.id);
+    await this.repository.replaceEventSeries(events, removedIds);
+    this.state.games = this.state.games.filter(event => event.seriesId !== seriesId);
+    events.forEach(event => this.#merge("games", event));
+  }
+  async deleteEventSeries(seriesId) {
+    const ids = this.state.games.filter(event => event.seriesId === seriesId).map(event => event.id);
+    await this.repository.deleteEventSeries(ids);
+    this.state.games = this.state.games.filter(event => event.seriesId !== seriesId);
+    return ids.length;
+  }
+  async importRoster(rows) {
+    const result = await this.repository.importRoster(rows, this.state);
+    result.families.forEach(family => this.#merge("families", family));
+    result.players.forEach(player => this.#merge("players", player));
+    return { playerCount: result.players.length, familyCount: result.families.length, inviteCount: result.inviteCount };
+  }
+  #merge(collection, value) {
+    const index = this.state[collection].findIndex(item => item.id === value.id);
+    if (index >= 0) this.state[collection][index] = value; else this.state[collection].push(value);
+  }
+}

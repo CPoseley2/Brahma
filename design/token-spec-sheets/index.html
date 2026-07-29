@@ -1,0 +1,327 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Fair Oaks Soccer · Token Domain Standards</title>
+  <style>
+    :root {
+      --ink: #101113;
+      --silver: #a9adb0;
+      --paper: #f5f2eb;
+      --gold: #c8a12b;
+      font-family: Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+    }
+    * { box-sizing: border-box; }
+    html, body { margin: 0; background: #dfe1e2; color: var(--ink); }
+    body[data-domain] .sheet { display: none; }
+    body[data-domain="teamwork"] #teamwork,
+    body[data-domain="love"] #love,
+    body[data-domain="brave"] #brave,
+    body[data-domain="tactics"] #tactics { display: grid; }
+    .sheet {
+      --domain: var(--gold);
+      --domain-dark: #101113;
+      width: 1600px;
+      height: 1200px;
+      display: grid;
+      grid-template-rows: 178px 1fr 126px;
+      overflow: hidden;
+      background:
+        radial-gradient(circle at 92% 8%, color-mix(in srgb, var(--domain) 17%, transparent), transparent 360px),
+        linear-gradient(145deg, #fff, var(--paper));
+      border-top: 18px solid var(--domain);
+      page-break-after: always;
+    }
+    .teamwork { --domain: #28744d; --domain-dark: #122e21; }
+    .love { --domain: #c94236; --domain-dark: #671f1a; }
+    .brave { --domain: #f1c62e; --domain-dark: #403408; }
+    .tactics { --domain: #2d80aa; --domain-dark: #123d55; }
+    header {
+      display: grid;
+      grid-template-columns: 132px 1fr auto;
+      align-items: center;
+      gap: 28px;
+      padding: 28px 62px 24px;
+      border-bottom: 1px solid #cfd1d2;
+      background: rgba(255,255,255,.78);
+    }
+    .number {
+      width: 104px;
+      height: 104px;
+      display: grid;
+      place-items: center;
+      border-radius: 50%;
+      color: white;
+      background: var(--domain);
+      box-shadow: inset 0 -8px 0 rgba(0,0,0,.16), 0 8px 25px rgba(16,17,19,.14);
+      font-size: 48px;
+      font-weight: 950;
+    }
+    .brave .number { color: #101113; }
+    .kicker {
+      margin: 0 0 4px;
+      color: var(--domain-dark);
+      font-size: 18px;
+      font-weight: 900;
+      letter-spacing: .14em;
+      text-transform: uppercase;
+    }
+    h1 {
+      margin: 0;
+      font-size: 62px;
+      line-height: .98;
+      letter-spacing: -.045em;
+    }
+    .colors {
+      align-self: end;
+      padding: 10px 15px;
+      border: 2px solid var(--domain);
+      border-radius: 999px;
+      color: var(--domain-dark);
+      background: white;
+      font-size: 16px;
+      font-weight: 900;
+      letter-spacing: .08em;
+      text-transform: uppercase;
+    }
+    main {
+      display: grid;
+      grid-template-columns: minmax(0, 1.45fr) minmax(430px, .8fr);
+      gap: 34px;
+      padding: 34px 62px 26px;
+      min-height: 0;
+    }
+    .art-column, .spec-column { min-width: 0; }
+    .art-column {
+      display: grid;
+      grid-template-rows: auto 1fr auto;
+      gap: 13px;
+    }
+    .section-label {
+      display: flex;
+      align-items: center;
+      gap: 10px;
+      margin: 0;
+      color: #62666a;
+      font-size: 14px;
+      font-weight: 900;
+      letter-spacing: .12em;
+      text-transform: uppercase;
+    }
+    .section-label::before {
+      content: "";
+      width: 34px;
+      height: 4px;
+      border-radius: 99px;
+      background: var(--domain);
+    }
+    .art-board {
+      min-height: 0;
+      display: grid;
+      place-items: center;
+      overflow: hidden;
+      border: 1px solid #cfd1d2;
+      border-radius: 22px;
+      background: white;
+      box-shadow: 0 18px 50px rgba(16,17,19,.11);
+    }
+    .art-board > img {
+      display: block;
+      width: 100%;
+      height: 100%;
+      object-fit: contain;
+    }
+    .art-note {
+      margin: 0;
+      color: #62666a;
+      font-size: 15px;
+      line-height: 1.4;
+    }
+    .tactics-art {
+      grid-template-columns: 1.05fr .95fr;
+      grid-template-rows: 1fr 1fr;
+      gap: 12px;
+      padding: 12px;
+      background: #0d2c42;
+    }
+    .tactics-art img {
+      width: 100%;
+      height: 100%;
+      min-height: 0;
+      object-fit: contain;
+      border-radius: 14px;
+      background: white;
+    }
+    .tactics-art .mascot { grid-row: 1 / 3; }
+    .spec-column { display: grid; align-content: start; gap: 16px; }
+    .card {
+      padding: 20px 22px;
+      border: 1px solid #cfd1d2;
+      border-radius: 18px;
+      background: rgba(255,255,255,.9);
+      box-shadow: 0 9px 25px rgba(16,17,19,.07);
+    }
+    .card h2 {
+      margin: 0 0 9px;
+      color: var(--domain-dark);
+      font-size: 15px;
+      letter-spacing: .1em;
+      text-transform: uppercase;
+    }
+    .card p {
+      margin: 0;
+      font-size: 19px;
+      font-weight: 720;
+      line-height: 1.42;
+    }
+    .card ul {
+      margin: 0;
+      padding-left: 20px;
+      color: #35383b;
+      font-size: 16px;
+      line-height: 1.5;
+    }
+    .swatches { display: grid; grid-template-columns: repeat(4, 1fr); gap: 8px; }
+    .swatch {
+      overflow: hidden;
+      border: 1px solid #c5c8ca;
+      border-radius: 11px;
+      background: white;
+    }
+    .swatch i { display: block; height: 34px; background: var(--color); }
+    .swatch span {
+      display: block;
+      padding: 7px 4px;
+      font-size: 11px;
+      font-weight: 850;
+      text-align: center;
+    }
+    footer {
+      display: grid;
+      grid-template-columns: 1fr auto;
+      align-items: center;
+      gap: 20px;
+      padding: 22px 62px;
+      color: white;
+      background: var(--domain-dark);
+    }
+    footer strong {
+      display: block;
+      margin-bottom: 5px;
+      color: color-mix(in srgb, var(--domain) 72%, white);
+      font-size: 14px;
+      letter-spacing: .11em;
+      text-transform: uppercase;
+    }
+    footer p { margin: 0; font-size: 16px; line-height: 1.4; }
+    .status {
+      padding: 11px 15px;
+      border: 1px solid color-mix(in srgb, var(--domain) 70%, white);
+      border-radius: 999px;
+      color: white;
+      font-size: 14px;
+      font-weight: 900;
+      letter-spacing: .08em;
+      text-transform: uppercase;
+    }
+  </style>
+</head>
+<body>
+  <section id="teamwork" class="sheet teamwork">
+    <header>
+      <div class="number">1</div>
+      <div><p class="kicker">Fair Oaks Soccer · Token Domain</p><h1>Teamwork</h1></div>
+      <div class="colors">Green / Black</div>
+    </header>
+    <main>
+      <div class="art-column">
+        <p class="section-label">Canonical iconography</p>
+        <div class="art-board"><img src="./source/teamwork.png" alt="Green Teamwork token source artwork"></div>
+        <p class="art-note">Shared play is the front-facing story; the Fair Oaks rooster is the reverse-side brand anchor. Preserve the inclusive two-player image and green field.</p>
+      </div>
+      <div class="spec-column">
+        <div class="card"><h2>Player promise</h2><p>I helped someone, shared space, or made the team better.</p></div>
+        <div class="card"><h2>Coach looks for</h2><p>Inviting a teammate, returning a ball, sharing equipment, celebrating someone else, or solving a problem together.</p></div>
+        <div class="card"><h2>Visual language</h2><ul><li>Two or more players cooperating</li><li>Fair Oaks rooster as supporting mascot</li><li>Open gesture, shared ball, welcoming energy</li><li>Avoid podiums, rankings, or “best player” imagery</li></ul></div>
+        <div class="card"><h2>Digital color anchors</h2><div class="swatches"><div class="swatch"><i style="--color:#28744d"></i><span>#28744D</span></div><div class="swatch"><i style="--color:#101113"></i><span>#101113</span></div><div class="swatch"><i style="--color:#c8a12b"></i><span>#C8A12B</span></div><div class="swatch"><i style="--color:#ffffff"></i><span>#FFFFFF</span></div></div></div>
+      </div>
+    </main>
+    <footer><div><strong>Production lock</strong><p>Artwork direction confirmed. Add the word “TEAMWORK” to the final physical-token face or rim before manufacturing.</p></div><span class="status">Confirmed system</span></footer>
+  </section>
+
+  <section id="love" class="sheet love">
+    <header>
+      <div class="number">2</div>
+      <div><p class="kicker">Fair Oaks Soccer · Token Domain</p><h1>Love of the Game</h1></div>
+      <div class="colors">Red</div>
+    </header>
+    <main>
+      <div class="art-column">
+        <p class="section-label">Canonical iconography</p>
+        <div class="art-board"><img src="./source/love.png" alt="Red Love of the Game token source artwork"></div>
+        <p class="art-note">The center “LOVE OF THE GAME” oak-tree mark is the canonical domain face. Joyful Play, Play With Joy, and the team-growth language are supporting expressions.</p>
+      </div>
+      <div class="spec-column">
+        <div class="card"><h2>Player promise</h2><p>I brought joy, energy, and curiosity to play.</p></div>
+        <div class="card"><h2>Coach looks for</h2><p>Eager participation, imagination, laughter, returning after a break, or helping the group love the game.</p></div>
+        <div class="card"><h2>Visual language</h2><ul><li>Oak tree, acorns, roots, ball, and motion</li><li>Warm red field with white and gold lettering</li><li>Joy, imagination, belonging, and returning to play</li><li>“Hard work” may support joy, but never replace it</li></ul></div>
+        <div class="card"><h2>Digital color anchors</h2><div class="swatches"><div class="swatch"><i style="--color:#c94236"></i><span>#C94236</span></div><div class="swatch"><i style="--color:#671f1a"></i><span>#671F1A</span></div><div class="swatch"><i style="--color:#c8a12b"></i><span>#C8A12B</span></div><div class="swatch"><i style="--color:#ffffff"></i><span>#FFFFFF</span></div></div></div>
+      </div>
+    </main>
+    <footer><div><strong>Production lock</strong><p>Center oak-tree “LOVE OF THE GAME” is primary. Other phrases are earned-language variants, not separate token domains.</p></div><span class="status">Confirmed system</span></footer>
+  </section>
+
+  <section id="brave" class="sheet brave">
+    <header>
+      <div class="number">3</div>
+      <div><p class="kicker">Fair Oaks Soccer · Token Domain</p><h1>Brave Shots</h1></div>
+      <div class="colors">Yellow</div>
+    </header>
+    <main>
+      <div class="art-column">
+        <p class="section-label">Canonical iconography</p>
+        <div class="art-board"><img src="./source/brave.png" alt="Yellow Brave Shots token source artwork"></div>
+        <p class="art-note">Use the upper target-and-ball front with the upper single-rooster reverse as the canonical pair. The lower pair remains an approved alternate.</p>
+      </div>
+      <div class="spec-column">
+        <div class="card"><h2>Player promise</h2><p>I tried something bold, even when it might not work.</p></div>
+        <div class="card"><h2>Coach looks for</h2><p>Taking a shot, trying the other foot, facing a defender, recovering from a miss, or trying again.</p></div>
+        <div class="card"><h2>Visual language</h2><ul><li>Target, ball flight, shot trail, and forward motion</li><li>Yellow field with decisive black typography</li><li>Celebrate the attempt—not only the result</li><li>Avoid bullseye language that makes accuracy the award</li></ul></div>
+        <div class="card"><h2>Digital color anchors</h2><div class="swatches"><div class="swatch"><i style="--color:#f1c62e"></i><span>#F1C62E</span></div><div class="swatch"><i style="--color:#101113"></i><span>#101113</span></div><div class="swatch"><i style="--color:#c8a12b"></i><span>#C8A12B</span></div><div class="swatch"><i style="--color:#ffffff"></i><span>#FFFFFF</span></div></div></div>
+      </div>
+    </main>
+    <footer><div><strong>Production lock</strong><p>Domain name and icon are confirmed. Coaching language must always reward courage, recovery, and trying again—not goals scored.</p></div><span class="status">Confirmed system</span></footer>
+  </section>
+
+  <section id="tactics" class="sheet tactics">
+    <header>
+      <div class="number">4</div>
+      <div><p class="kicker">Fair Oaks Soccer · Token Domain</p><h1>Tactics</h1></div>
+      <div class="colors">Blue</div>
+    </header>
+    <main>
+      <div class="art-column">
+        <p class="section-label">Canonical and supporting iconography</p>
+        <div class="art-board tactics-art">
+          <img class="mascot" src="./source/tactics-mascot.png" alt="Shell Natoma Tactics mascot artwork">
+          <img src="./source/tactics-token.png" alt="Blue physical token construction reference">
+          <img src="./source/tactics-language.png" alt="Shell Map Tactics language artwork">
+        </div>
+        <p class="art-note">Shell Natoma is the Tactics character: the patterned shell, river path, arrows, and “Touch · Turn · Choose” language turn awareness into a memorable visual system.</p>
+      </div>
+      <div class="spec-column">
+        <div class="card"><h2>Player promise</h2><p>I noticed space, a goal, a teammate, or what the game was asking.</p></div>
+        <div class="card"><h2>Coach looks for</h2><p>Looking up, finding open grass, choosing a goal, changing direction, spreading out, or recognizing a restart.</p></div>
+        <div class="card"><h2>Visual language</h2><ul><li>Shell Natoma as the canonical domain character</li><li>Shell maps, arrows, paths, stop-turn-go choices</li><li>River blue, gold route marks, oak/acorn details</li><li>Avoid chalkboard complexity or “smartest player” framing</li></ul></div>
+        <div class="card"><h2>Digital color anchors</h2><div class="swatches"><div class="swatch"><i style="--color:#2d80aa"></i><span>#2D80AA</span></div><div class="swatch"><i style="--color:#123d55"></i><span>#123D55</span></div><div class="swatch"><i style="--color:#c8a12b"></i><span>#C8A12B</span></div><div class="swatch"><i style="--color:#d7c5a5"></i><span>#D7C5A5</span></div></div></div>
+      </div>
+    </main>
+    <footer><div><strong>Production lock</strong><p>Shell Natoma is confirmed for Tactics. Add “TACTICS” to the final blue physical-token face; retain the rooster only as a reverse-side club mark.</p></div><span class="status">Confirmed system</span></footer>
+  </section>
+  <script>
+    const domain = new URLSearchParams(location.search).get("domain");
+    if (domain) document.body.dataset.domain = domain;
+  </script>
+</body>
+</html>

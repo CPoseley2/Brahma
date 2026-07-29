@@ -1,0 +1,23 @@
+{
+  "name": "fair-oaks-u6-team-hub",
+  "private": true,
+  "version": "3.0.0",
+  "type": "module",
+  "scripts": {
+    "dev": "vite",
+    "build": "vite build",
+    "preview": "vite preview",
+    "test": "node --test tests/event-series.test.js tests/family-dashboard.test.js tests/field-mode.test.js tests/login-view-model.test.js tests/messaging.test.js tests/practice-sessions.test.js tests/recurrence.test.js tests/roster-importer.test.js tests/season-playbook.test.js tests/team-hub-repository.test.js",
+    "test:rules": "firebase emulators:exec --only firestore 'node --test tests/firestore.rules.test.js'",
+    "bootstrap:team": "node scripts/bootstrap-team.mjs"
+  },
+  "devDependencies": {
+    "@firebase/rules-unit-testing": "^5.0.0",
+    "vite": "^7.0.0"
+  },
+  "dependencies": {
+    "firebase": "^12.16.0",
+    "papaparse": "^5.5.4",
+    "read-excel-file": "^9.3.4"
+  }
+}
