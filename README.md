@@ -70,7 +70,7 @@ Every file under `src/views` is kept below 200 lines. New features should receiv
 
 The Firebase project is `fair-oaks-u6-team-hub`. Its default Firestore database uses the `nam5` multi-region. Google, Email/Password, and passwordless email-link Authentication are enabled, and the deployed app derives the signed-in user's role and family from `teams/{teamId}/members/{uid}`. The prototype role and family selectors are not available in authenticated sessions.
 
-Google is the primary sign-in method and falls back to a full-page redirect when a browser blocks popups. Invited users may open **Account** after signing in to connect Google or set/update a password. Email links remain available as a fallback, with quota-specific guidance when Firebase's daily sending limit is reached.
+Google is the primary sign-in method and falls back to a full-page redirect when a browser blocks popups. On the production `web.app` host, the client uses that same first-party domain for Firebase Auth so Safari and other browsers that partition third-party storage can preserve the redirect session. Invited users may open **Account** after signing in to connect Google or set/update a password. Email links remain available as a fallback, with quota-specific guidance when Firebase's daily sending limit is reached.
 
 Copy `.env.example` to `.env` and provide the Firebase web app values for a new environment. The local `.env` is ignored by Git.
 

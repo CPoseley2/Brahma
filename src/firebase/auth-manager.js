@@ -45,7 +45,8 @@ export class AuthManager extends EventTarget {
     const pending = sessionStorage.getItem(GOOGLE_REDIRECT_KEY) === "true";
     try {
       const result = await getRedirectResult(this.auth);
-      if (result?.user) sessionStorage.removeItem(GOOGLE_REDIRECT_KEY);
+      await this.auth.authStateReady?.();
+      if (result?.user || this.auth.currentUser) sessionStorage.removeItem(GOOGLE_REDIRECT_KEY);
       else if (pending) {
         sessionStorage.removeItem(GOOGLE_REDIRECT_KEY);
         throw new Error("Google sign-in returned without a session. Please try Google sign-in again.");
