@@ -18,7 +18,7 @@ const standardCard = (block, drill, lesson) => drill
 export class FieldModeView {
   constructor(root, appViewModel, fieldViewModel) {
     this.root = root; this.app = appViewModel; this.vm = fieldViewModel; this.wakeLock = null; this.sessionFeedback = "";
-    this.selectedSkillId = ""; this.selectedPlayerIds = new Set(); this.observerBlockKey = "";
+    this.selectedSkillId = ""; this.selectedSkillGroupId = ""; this.selectedPlayerIds = new Set(); this.observerBlockKey = "";
     this.observationFeedback = ""; this.observationFeedbackKind = ""; this.savingObservation = false;
   }
   mount() {
@@ -46,6 +46,7 @@ export class FieldModeView {
       jump: () => this.vm.jump(Number(control.dataset.index)),
       "previous-session": () => this.#movePractice(-1),
       "next-session": () => this.#movePractice(1),
+      "filter-skills": () => this.#filterSkills(control.dataset.skillGroup),
       "select-skill": () => this.#selectSkill(control.dataset.skillId),
       "select-player": () => this.#togglePlayer(control.dataset.playerId),
       "record-observation": () => this.#recordObservation(),
@@ -74,21 +75,38 @@ export class FieldModeView {
   #allSkills() {
     return this.app.state.skillFramework.flatMap(group => (group.skills || []).map(skill => ({
       ...skill,
+      groupId: group.id,
       groupName: group.name,
       groupShort: group.short || group.name,
     })));
   }
-  #skillsForBlock(block) {
+  #skillGroups() {
+    return this.app.state.skillFramework
+      .filter(group => group.skills?.length)
+      .map(group => ({ id: group.id, label: group.short || group.name }));
+  }
+  #skillsForBlock(block, groupId = "all") {
     const priority = new Map((block?.guidance?.skillIds || []).map((id, index) => [id, index]));
-    return this.#allSkills().sort((left, right) => {
+    return this.#allSkills().filter(skill => groupId === "all" || skill.groupId === groupId).sort((left, right) => {
       const leftPriority = priority.has(left.id) ? priority.get(left.id) : Number.MAX_SAFE_INTEGER;
       const rightPriority = priority.has(right.id) ? priority.get(right.id) : Number.MAX_SAFE_INTEGER;
       return leftPriority - rightPriority;
     });
   }
+  #defaultSkillGroup(block) {
+    const skillsById = new Map(this.#allSkills().map(skill => [skill.id, skill]));
+    return (block?.guidance?.skillIds || []).map(id => skillsById.get(id)?.groupId).find(Boolean)
+      || "all";
+  }
   #resetObserver() {
-    this.selectedSkillId = ""; this.selectedPlayerIds.clear(); this.observerBlockKey = "";
+    this.selectedSkillId = ""; this.selectedSkillGroupId = ""; this.selectedPlayerIds.clear(); this.observerBlockKey = "";
     this.observationFeedback = ""; this.observationFeedbackKind = ""; this.savingObservation = false;
+  }
+  #filterSkills(groupId) {
+    if (groupId !== "all" && !this.#skillGroups().some(group => group.id === groupId)) return;
+    this.selectedSkillGroupId = groupId; this.selectedSkillId = "";
+    this.observationFeedback = ""; this.observationFeedbackKind = "";
+    this.#renderObserver(this.vm.currentBlock);
   }
   #selectSkill(skillId) {
     if (!this.#allSkills().some(skill => skill.id === skillId)) return;
@@ -122,18 +140,28 @@ export class FieldModeView {
     }
   }
   #renderObserver(block) {
-    const skills = this.#skillsForBlock(block);
     const blockKey = `${this.vm.event?.id || ""}:${this.vm.blockIndex}`;
     if (this.observerBlockKey !== blockKey) {
       this.observerBlockKey = blockKey;
-      this.selectedSkillId = skills[0]?.id || "";
+      this.selectedSkillGroupId = this.#defaultSkillGroup(block);
+      this.selectedSkillId = "";
       this.selectedPlayerIds.clear();
       this.observationFeedback = ""; this.observationFeedbackKind = "";
     }
+    const groups = this.#skillGroups();
+    if (this.selectedSkillGroupId !== "all" && !groups.some(group => group.id === this.selectedSkillGroupId)) this.selectedSkillGroupId = groups[0]?.id || "all";
+    const skills = this.#skillsForBlock(block, this.selectedSkillGroupId);
     if (!skills.some(skill => skill.id === this.selectedSkillId)) this.selectedSkillId = skills[0]?.id || "";
     const recommended = new Set(block?.guidance?.skillIds || []);
+    const filters = [...groups, { id: "all", label: "All" }];
+    const filterBar = this.root.querySelector("#fieldSkillFilters");
+    const filterSignature = `${filters.map(filter => `${filter.id}:${filter.label}`).join("|")}:${this.selectedSkillGroupId}`;
+    if (filterBar.dataset.signature !== filterSignature) {
+      filterBar.innerHTML = filters.map(filter => `<button type="button" aria-pressed="${filter.id === this.selectedSkillGroupId}" class="${filter.id === this.selectedSkillGroupId ? "selected" : ""}" data-field-action="filter-skills" data-skill-group="${escapeHtml(filter.id)}">${escapeHtml(filter.label)}</button>`).join("");
+      filterBar.dataset.signature = filterSignature;
+    }
     const skillWheel = this.root.querySelector("#fieldSkillWheel");
-    const skillSignature = `${skills.map(skill => skill.id).join("|")}:${this.selectedSkillId}`;
+    const skillSignature = `${this.selectedSkillGroupId}:${skills.map(skill => skill.id).join("|")}:${this.selectedSkillId}`;
     if (skillWheel.dataset.signature !== skillSignature) {
       skillWheel.innerHTML = skills.map(skill => `<button type="button" role="option" aria-selected="${skill.id === this.selectedSkillId}" class="field-wheel-item ${skill.id === this.selectedSkillId ? "selected" : ""}" data-field-action="select-skill" data-skill-id="${escapeHtml(skill.id)}"><small>${recommended.has(skill.id) ? "This block" : escapeHtml(skill.groupShort)}</small><strong>${escapeHtml(skill.name)}</strong></button>`).join("")
         || `<p class="field-wheel-empty">No development skills are configured.</p>`;
@@ -153,7 +181,9 @@ export class FieldModeView {
 
     const selectedSkill = skills.find(skill => skill.id === this.selectedSkillId);
     const playerCount = this.selectedPlayerIds.size;
-    this.root.querySelector("#fieldSkillHint").textContent = recommended.size ? `${recommended.size} skills match this block.` : "Swipe to choose any development skill.";
+    const relevantCount = skills.filter(skill => recommended.has(skill.id)).length;
+    const groupLabel = filters.find(filter => filter.id === this.selectedSkillGroupId)?.label || "All";
+    this.root.querySelector("#fieldSkillHint").textContent = `${skills.length} ${groupLabel} skill${skills.length === 1 ? "" : "s"}${relevantCount ? ` · ${relevantCount} for this block` : ""}.`;
     this.root.querySelector("#fieldPlayerCount").textContent = playerCount ? `${playerCount} player${playerCount === 1 ? "" : "s"} selected.` : "Choose everyone you saw.";
     const feedback = this.root.querySelector("#fieldObservationFeedback");
     feedback.className = this.observationFeedbackKind;

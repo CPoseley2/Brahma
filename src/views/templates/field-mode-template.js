@@ -14,7 +14,7 @@ export const fieldModeTemplate = `<dialog id="fieldModeDialog" class="field-mode
       <section class="field-observer" aria-labelledby="fieldObserverTitle">
         <div class="field-observer-head"><div><p class="eyebrow">Quick observation</p><h3 id="fieldObserverTitle">Notice it. Mark it. Keep coaching.</h3></div><span>Shared to player profile</span></div>
         <div class="field-wheel-grid">
-          <section class="field-wheel-panel"><div class="field-wheel-label"><strong>1 · Skill observed</strong><small id="fieldSkillHint">This block’s skills appear first.</small></div><div id="fieldSkillWheel" class="field-wheel" role="listbox" aria-label="Skill observed"></div></section>
+          <section class="field-wheel-panel"><div class="field-wheel-label"><strong>1 · Skill observed</strong><small id="fieldSkillHint">This block’s skills appear first.</small></div><div id="fieldSkillFilters" class="field-skill-filters" role="group" aria-label="Filter skills by category"></div><div id="fieldSkillWheel" class="field-wheel" role="listbox" aria-label="Skill observed"></div></section>
           <section class="field-wheel-panel"><div class="field-wheel-label"><strong>2 · Player or players</strong><small id="fieldPlayerCount">Choose everyone you saw.</small></div><div id="fieldPlayerWheel" class="field-wheel player-wheel" role="group" aria-label="Players observed"></div></section>
         </div>
         <div class="field-observer-actions"><p id="fieldObservationFeedback" aria-live="polite">Select a skill and one or more players.</p><button id="fieldObservationSave" data-field-action="record-observation" disabled>Save observation</button></div>
