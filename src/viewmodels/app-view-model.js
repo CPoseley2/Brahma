@@ -122,6 +122,59 @@ export class AppViewModel extends EventTarget {
     const levels = this.latestSkillLevels(playerId);
     return this.state.skillFramework.filter(group => group.skills.some(skill => (levels[skill.id] ?? 0) > 0)).length;
   }
+  async recordFieldObservation({ eventId, blockLabel, skillId, playerIds }) {
+    if (this.role !== "coach") throw new Error("Only a coach can record player observations.");
+    const event = this.state.games.find(item => item.id === eventId);
+    if (!event) throw new Error("This practice could not be found.");
+    const skills = this.state.skillFramework.flatMap(group => group.skills || []);
+    const skillsById = new Map(skills.map(item => [item.id, item]));
+    const skill = skillsById.get(skillId);
+    if (!skill) throw new Error("Choose a skill you observed.");
+    const selectedIds = [...new Set(playerIds || [])];
+    const players = selectedIds.map(id => this.player(id)).filter(player => player?.active);
+    if (!players.length) throw new Error("Choose at least one player.");
+
+    const updatedAt = new Date().toISOString();
+    const observations = players.map(player => {
+      const id = `field-${event.id}-${player.id}`;
+      const existing = this.state.observations.find(item => item.id === id && item.playerId === player.id);
+      const ratings = { ...(existing?.ratings || {}) };
+      ratings[skill.id] = Math.max(1, Number(ratings[skill.id] || 0), Number(this.latestSkillLevels(player.id)[skill.id] || 0));
+      const skillIds = [...new Set([...(existing?.fieldObservation?.skillIds || []), skill.id])];
+      const blockLabels = [...new Set([...(existing?.fieldObservation?.blockLabels || []), blockLabel].filter(Boolean))];
+      const familyLabels = skillIds.map(id => skillsById.get(id)?.familyText || skillsById.get(id)?.name || id);
+      const noticed = new Intl.ListFormat("en", { style: "long", type: "conjunction" }).format(familyLabels);
+      return {
+        ...existing,
+        id,
+        playerId: player.id,
+        date: event.date || todayIso(),
+        ratings,
+        celebration: `At practice, we noticed ${noticed}.`,
+        nextPlay: existing?.nextPlay || "",
+        privateNote: existing?.privateNote || "Quick marks recorded in Field Mode.",
+        shared: true,
+        fieldObservation: {
+          eventId: event.id,
+          blockLabels,
+          skillIds,
+          createdAt: existing?.fieldObservation?.createdAt || updatedAt,
+          updatedAt,
+        },
+      };
+    });
+
+    if (this.model.upsert) {
+      await Promise.all(observations.map(item => this.model.upsert("observations", item)));
+      observations.forEach(item => this.upsertLocal("observations", item));
+    } else {
+      observations.forEach(item => this.upsertLocal("observations", item));
+      await this.model.save();
+    }
+    this.changed();
+    const names = players.map(player => player.firstName);
+    return `Saved ${skill.name} for ${new Intl.ListFormat("en", { style: "long", type: "conjunction" }).format(names)}.`;
+  }
 
   setRole(role) { if (this.identityLocked) return; this.role = role; localStorage.setItem("fairOaksU6.role", role); this.go(this.defaultRoute); }
   setFamily(id, notify = true) { if (this.identityLocked && id !== this.familyId) return; this.familyId = id; if (!this.identityLocked) localStorage.setItem("fairOaksU6.family", id); if (notify) this.changed(); }

@@ -74,6 +74,7 @@ export const firstSessionObservation = {
       run: "Greet each child, hand them a ball, and let all four explore at once. Intervene only for safety. Do not demonstrate or correct technique.",
       say: ["You can explore the whole field. Show me what your ball can do."],
       watch: ["How the child joins or seeks support", "Natural running, stopping, and turning", "How the child moves with, stops, or retrieves the ball", "Curiosity, awareness of others, and willingness to try again"],
+      skillIds: ["active-participation", "start-stop", "change-direction", "close-dribble", "space-sharing", "joy", "brave-try"],
       record: "Mark only spontaneous behaviors. A missing behavior is Not observed—not evidence that the child cannot do it.",
     }),
     observationBlock(3, "Animal Moves", "animal-moves", "Observe body control and the child’s response to four simple directions.", {
@@ -81,6 +82,7 @@ export const firstSessionObservation = {
       run: "Give each instruction once and allow time to respond. Keep the game moving; this is an invitation, not a test.",
       say: ["Move like a cheetah.", "Freeze.", "Turn and find a new home.", "Jump like a frog and land quietly."],
       watch: ["Starts and stops safely", "Changes direction", "Balances, jumps, and lands with control", "Responds to a short group instruction"],
+      skillIds: ["start-stop", "change-direction", "balance-jump", "simple-direction"],
       record: "For each child, note the least support needed: first group cue, personal repeat or gesture, demonstration, or no clear response.",
     }),
     observationBlock(6, "Soccer Cars", "traffic-lights", "Observe dribbling, stopping, turning, space awareness, and response to standardized ball prompts.", {
@@ -88,6 +90,7 @@ export const firstSessionObservation = {
       run: "Let players drive freely. Deliver the four prompts about 45–60 seconds apart. Give the group cue once and wait five seconds. If needed, use the child’s name plus the same cue and a gesture; then demonstrate once.",
       say: ["Red light—stop your ball.", "Green light—find open road.", "Blue light—turn and go somewhere new.", "Park in a colored home."],
       watch: ["Keeps the ball nearby while moving", "Stops a rolling ball with a foot", "Turns or changes direction with the ball", "Notices open space and boundaries"],
+      skillIds: ["close-dribble", "stop-ball", "dribble-turn", "boundaries", "space-sharing", "simple-direction"],
       record: "Use S for spontaneous, 1 for first cue, 2 for personal repeat or gesture, 3 for demonstration, and NR when no clear response was observed.",
     }),
     observationBlock(5, "Goal Hunters", "goal-hunters", "Observe purposeful striking, target recognition, and recovery after a miss.", {
@@ -95,6 +98,7 @@ export const firstSessionObservation = {
       run: "Players dribble to a goal, shoot, retrieve their own ball, and hunt for the other goal. Begin without technique cues. Add the second prompt after about two minutes.",
       say: ["Find a goal and score any way you can.", "Look at your goal before you shoot."],
       watch: ["Approaches a stationary or moving ball with balance", "Strikes forward with purpose", "Looks toward and shoots at the intended goal", "Retrieves the ball and tries again after a miss"],
+      skillIds: ["approach-ball", "strike-forward", "shoot-goal", "brave-try"],
       record: "Record attempts and behaviors, not goals scored. Goal totals mix skill with traffic, distance, and luck.",
     }),
     observationBlock(1, "Water & Quick Marks", null, "Give players a reset while the coach preserves the first half’s observations.", {
@@ -102,6 +106,7 @@ export const firstSessionObservation = {
       run: "Make only quick codes or checkmarks—do not write long notes. Confirm the two goals and put spare balls beside you for fast restarts.",
       say: ["Grab water, then find your team color."],
       watch: ["Any child who needs transition support", "Safe sharing of space and equipment"],
+      skillIds: ["simple-direction", "space-sharing"],
       record: "Fill gaps only from something you actually saw. Leave every untested item as Not observed.",
     }),
     observationBlock(4, "2v2 — Quiet Coach", "three-v-three", "Capture natural game understanding before prompts influence play.", {
@@ -109,6 +114,7 @@ export const firstSessionObservation = {
       run: "Play continuously with fast coach restarts. Apart from safety and identifying the goals at the start, stay quiet and let the game teach.",
       say: ["This team scores here. This team scores there. Play soccer!"],
       watch: ["Moves toward the ball and joins play", "Attacks the intended goal", "Recognizes the boundary or a restart", "Changes job when the other team wins the ball", "Recovers and returns after a mistake"],
+      skillIds: ["active-participation", "correct-goal", "boundaries", "return-play", "brave-try"],
       record: "Reserve Seen in play for behaviors that appear spontaneously here. Note the context rather than assigning an overall player score.",
     }),
     observationBlock(5, "2v2 — Prompted Coach", "three-v-three", "See whether brief coaching language changes behavior and later transfers into play.", {
@@ -116,6 +122,7 @@ export const firstSessionObservation = {
       run: "Use only the four short prompts below, one at a time and only when relevant. Do not add an explanation. After a response, wait to see whether the behavior returns without another cue.",
       say: ["Which goal?", "Find grass.", "Can you get back in the game?", "What brave idea will you try?"],
       watch: ["Immediate response to a relevant prompt", "Change in direction, spacing, or rejoining", "A prompted behavior that later appears spontaneously", "Confidence, frustration recovery, and kind play"],
+      skillIds: ["simple-direction", "change-direction", "return-play", "brave-try", "correct-goal", "space-sharing"],
       record: "Mark the support level and add T when the behavior later transfers without another cue. Keep prompt responsiveness separate from technical skill.",
     }),
     observationBlock(3, "Show Me & Close", null, "Check recall through demonstration and finish with a specific success for every child.", {
@@ -123,6 +130,7 @@ export const firstSessionObservation = {
       run: "Ask children to show rather than verbally explain. Accept different solutions. Finish by naming one concrete, positive behavior you saw from each child.",
       say: ["Show me how you stop your ball.", "Show me which goal your team was attacking.", "Show me your favorite move from today."],
       watch: ["Recall through action", "Confidence demonstrating in front of the group", "Enjoyment, curiosity, and response to teammates"],
+      skillIds: ["stop-ball", "correct-goal", "active-participation", "joy", "simple-direction"],
       record: "After practice, add one evidence sentence per child: what appeared naturally, what support helped, and whether anything transferred into the game.",
     }),
   ],

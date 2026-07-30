@@ -16,21 +16,40 @@ const standardCard = (block, drill, lesson) => drill
   : `<p class="eyebrow dark">${escapeHtml(block.label)}</p><h3>${escapeHtml(block.purpose)}</h3><p class="field-story">${escapeHtml(lesson.story)}</p>`;
 
 export class FieldModeView {
-  constructor(root, appViewModel, fieldViewModel) { this.root = root; this.app = appViewModel; this.vm = fieldViewModel; this.wakeLock = null; this.sessionFeedback = ""; }
+  constructor(root, appViewModel, fieldViewModel) {
+    this.root = root; this.app = appViewModel; this.vm = fieldViewModel; this.wakeLock = null; this.sessionFeedback = "";
+    this.selectedSkillId = ""; this.selectedPlayerIds = new Set(); this.observerBlockKey = "";
+    this.observationFeedback = ""; this.observationFeedbackKind = ""; this.savingObservation = false;
+  }
   mount() {
     this.dialog = this.root.querySelector("#fieldModeDialog");
-    this.root.addEventListener("click", event => { const action = event.target.closest("[data-field-action]")?.dataset.fieldAction; if (action) this.#act(action, event.target.closest("[data-index]")?.dataset.index); });
+    this.root.addEventListener("click", event => {
+      const control = event.target.closest("[data-field-action]");
+      if (control) this.#act(control.dataset.fieldAction, control);
+    });
     this.dialog.addEventListener("change", event => { if (event.target.matches("#fieldPracticeSelect")) this.#switchPractice(event.target.value); });
     this.dialog.addEventListener("close", () => this.#close());
     this.vm.addEventListener("change", () => this.render());
   }
   open(eventId) {
-    this.sessionFeedback = "";
+    this.sessionFeedback = ""; this.#resetObserver();
     if (!this.#loadPractice(eventId)) return;
     this.dialog.showModal(); document.body.classList.add("field-mode-open"); this.#keepAwake();
   }
-  #act(action, index) {
-    const actions = { close: () => this.dialog.close(), toggle: () => this.vm.toggle(), reset: () => this.vm.reset(), next: () => this.vm.next(), previous: () => this.vm.previous(), jump: () => this.vm.jump(Number(index)), "previous-session": () => this.#movePractice(-1), "next-session": () => this.#movePractice(1) };
+  #act(action, control) {
+    const actions = {
+      close: () => this.dialog.close(),
+      toggle: () => this.vm.toggle(),
+      reset: () => this.vm.reset(),
+      next: () => this.vm.next(),
+      previous: () => this.vm.previous(),
+      jump: () => this.vm.jump(Number(control.dataset.index)),
+      "previous-session": () => this.#movePractice(-1),
+      "next-session": () => this.#movePractice(1),
+      "select-skill": () => this.#selectSkill(control.dataset.skillId),
+      "select-player": () => this.#togglePlayer(control.dataset.playerId),
+      "record-observation": () => this.#recordObservation(),
+    };
     actions[action]?.();
   }
   #loadPractice(eventId) {
@@ -42,6 +61,7 @@ export class FieldModeView {
   #switchPractice(eventId) {
     if (!eventId || eventId === this.vm.event?.id) return;
     this.sessionFeedback = "Practice changed · timer reset to the first block.";
+    this.#resetObserver();
     this.#loadPractice(eventId);
   }
   #movePractice(offset) {
@@ -51,6 +71,99 @@ export class FieldModeView {
     if (target) this.#switchPractice(target.id);
   }
   #fieldPractices() { return this.app.curriculumPracticeEvents.filter(event => this.app.lessonForPractice(event.id)); }
+  #allSkills() {
+    return this.app.state.skillFramework.flatMap(group => (group.skills || []).map(skill => ({
+      ...skill,
+      groupName: group.name,
+      groupShort: group.short || group.name,
+    })));
+  }
+  #skillsForBlock(block) {
+    const priority = new Map((block?.guidance?.skillIds || []).map((id, index) => [id, index]));
+    return this.#allSkills().sort((left, right) => {
+      const leftPriority = priority.has(left.id) ? priority.get(left.id) : Number.MAX_SAFE_INTEGER;
+      const rightPriority = priority.has(right.id) ? priority.get(right.id) : Number.MAX_SAFE_INTEGER;
+      return leftPriority - rightPriority;
+    });
+  }
+  #resetObserver() {
+    this.selectedSkillId = ""; this.selectedPlayerIds.clear(); this.observerBlockKey = "";
+    this.observationFeedback = ""; this.observationFeedbackKind = ""; this.savingObservation = false;
+  }
+  #selectSkill(skillId) {
+    if (!this.#allSkills().some(skill => skill.id === skillId)) return;
+    this.selectedSkillId = skillId; this.observationFeedback = ""; this.observationFeedbackKind = "";
+    this.#renderObserver(this.vm.currentBlock);
+    this.root.querySelector(`[data-skill-id="${skillId}"]`)?.scrollIntoView({ behavior: "smooth", block: "nearest", inline: "center" });
+  }
+  #togglePlayer(playerId) {
+    if (!this.app.activePlayers.some(player => player.id === playerId)) return;
+    if (this.selectedPlayerIds.has(playerId)) this.selectedPlayerIds.delete(playerId); else this.selectedPlayerIds.add(playerId);
+    this.observationFeedback = ""; this.observationFeedbackKind = "";
+    this.#renderObserver(this.vm.currentBlock);
+    this.root.querySelector(`[data-player-id="${playerId}"]`)?.scrollIntoView({ behavior: "smooth", block: "nearest", inline: "center" });
+  }
+  async #recordObservation() {
+    if (this.savingObservation || !this.selectedSkillId || !this.selectedPlayerIds.size) return;
+    this.savingObservation = true; this.observationFeedback = "Saving to player profiles…"; this.observationFeedbackKind = "";
+    this.#renderObserver(this.vm.currentBlock);
+    try {
+      this.observationFeedback = await this.app.recordFieldObservation({
+        eventId: this.vm.event.id,
+        blockLabel: this.vm.currentBlock.label,
+        skillId: this.selectedSkillId,
+        playerIds: [...this.selectedPlayerIds],
+      });
+      this.observationFeedbackKind = "success"; this.selectedPlayerIds.clear();
+    } catch (error) {
+      this.observationFeedback = error.message; this.observationFeedbackKind = "error";
+    } finally {
+      this.savingObservation = false; this.#renderObserver(this.vm.currentBlock);
+    }
+  }
+  #renderObserver(block) {
+    const skills = this.#skillsForBlock(block);
+    const blockKey = `${this.vm.event?.id || ""}:${this.vm.blockIndex}`;
+    if (this.observerBlockKey !== blockKey) {
+      this.observerBlockKey = blockKey;
+      this.selectedSkillId = skills[0]?.id || "";
+      this.selectedPlayerIds.clear();
+      this.observationFeedback = ""; this.observationFeedbackKind = "";
+    }
+    if (!skills.some(skill => skill.id === this.selectedSkillId)) this.selectedSkillId = skills[0]?.id || "";
+    const recommended = new Set(block?.guidance?.skillIds || []);
+    const skillWheel = this.root.querySelector("#fieldSkillWheel");
+    const skillSignature = `${skills.map(skill => skill.id).join("|")}:${this.selectedSkillId}`;
+    if (skillWheel.dataset.signature !== skillSignature) {
+      skillWheel.innerHTML = skills.map(skill => `<button type="button" role="option" aria-selected="${skill.id === this.selectedSkillId}" class="field-wheel-item ${skill.id === this.selectedSkillId ? "selected" : ""}" data-field-action="select-skill" data-skill-id="${escapeHtml(skill.id)}"><small>${recommended.has(skill.id) ? "This block" : escapeHtml(skill.groupShort)}</small><strong>${escapeHtml(skill.name)}</strong></button>`).join("")
+        || `<p class="field-wheel-empty">No development skills are configured.</p>`;
+      skillWheel.dataset.signature = skillSignature;
+    }
+
+    const players = [...this.app.activePlayers].sort((left, right) => `${left.firstName} ${left.lastName}`.localeCompare(`${right.firstName} ${right.lastName}`));
+    const playerWheel = this.root.querySelector("#fieldPlayerWheel");
+    const playerSignature = `${players.map(player => `${player.id}:${player.firstName}:${player.lastName}`).join("|")}:${[...this.selectedPlayerIds].sort().join("|")}`;
+    if (playerWheel.dataset.signature !== playerSignature) {
+      playerWheel.innerHTML = players.map(player => {
+        const selected = this.selectedPlayerIds.has(player.id);
+        return `<button type="button" aria-pressed="${selected}" class="field-wheel-item player ${selected ? "selected" : ""}" data-field-action="select-player" data-player-id="${escapeHtml(player.id)}"><span>${selected ? "✓" : escapeHtml(player.firstName.charAt(0))}</span><strong>${escapeHtml(player.firstName)} ${escapeHtml(player.lastName)}</strong></button>`;
+      }).join("") || `<p class="field-wheel-empty">No active players are on the roster.</p>`;
+      playerWheel.dataset.signature = playerSignature;
+    }
+
+    const selectedSkill = skills.find(skill => skill.id === this.selectedSkillId);
+    const playerCount = this.selectedPlayerIds.size;
+    this.root.querySelector("#fieldSkillHint").textContent = recommended.size ? `${recommended.size} skills match this block.` : "Swipe to choose any development skill.";
+    this.root.querySelector("#fieldPlayerCount").textContent = playerCount ? `${playerCount} player${playerCount === 1 ? "" : "s"} selected.` : "Choose everyone you saw.";
+    const feedback = this.root.querySelector("#fieldObservationFeedback");
+    feedback.className = this.observationFeedbackKind;
+    feedback.textContent = this.observationFeedback || (selectedSkill && playerCount
+      ? `Ready to save ${selectedSkill.name} for ${playerCount} player${playerCount === 1 ? "" : "s"}.`
+      : "Select a skill and one or more players.");
+    const save = this.root.querySelector("#fieldObservationSave");
+    save.disabled = this.savingObservation || !selectedSkill || !playerCount;
+    save.textContent = this.savingObservation ? "Saving…" : playerCount ? `Save for ${playerCount}` : "Save observation";
+  }
   async #keepAwake() { try { this.wakeLock = await navigator.wakeLock?.request("screen"); } catch { this.wakeLock = null; } }
   #close() { this.vm.close(); this.wakeLock?.release(); this.wakeLock = null; document.body.classList.remove("field-mode-open"); }
   render() {
@@ -84,6 +197,7 @@ export class FieldModeView {
     this.root.querySelector("[data-field-action=previous]").disabled = this.vm.blockIndex === 0;
     this.root.querySelector("[data-field-action=next]").disabled = this.vm.blockIndex === lesson.blocks.length - 1;
     this.root.querySelector("#fieldDrillCard").innerHTML = block.guidance ? observationCard(block, drill) : standardCard(block, drill, lesson);
+    this.#renderObserver(block);
     this.root.querySelector("#fieldTokenChip").innerHTML = `<span class="token-chip ${token.className}">${escapeHtml(token.name)}</span>`;
     this.root.querySelector("#fieldTokenPrompt").textContent = token.coachLooksFor;
     this.root.querySelector("#fieldBlockNav").innerHTML = lesson.blocks.map((item, index) => `<button data-field-action="jump" data-index="${index}" class="${index === this.vm.blockIndex ? "active" : ""}"><span>${index + 1}</span><strong>${escapeHtml(item.label)}</strong><small>${item.minutes} min</small></button>`).join("");
