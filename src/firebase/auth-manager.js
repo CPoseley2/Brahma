@@ -1,11 +1,10 @@
 import {
   browserLocalPersistence, EmailAuthProvider, GoogleAuthProvider, isSignInWithEmailLink,
-  getRedirectResult, linkWithCredential, linkWithPopup, onAuthStateChanged, sendSignInLinkToEmail,
-  setPersistence, signInWithEmailAndPassword, signInWithEmailLink, signInWithPopup, signInWithRedirect, signOut, updatePassword,
+  linkWithCredential, linkWithPopup, onAuthStateChanged, sendSignInLinkToEmail,
+  setPersistence, signInWithEmailAndPassword, signInWithEmailLink, signInWithPopup, signOut, updatePassword,
 } from "firebase/auth";
 
 const EMAIL_KEY = "fairOaksU6.signInEmail";
-const GOOGLE_REDIRECT_KEY = "fairOaksU6.googleRedirectPending";
 
 export class AuthManager extends EventTarget {
   constructor(auth, loadProfile, acceptInvite) {
@@ -13,7 +12,6 @@ export class AuthManager extends EventTarget {
     this.user = null; this.profile = null; this.status = "initializing"; this.error = null;
     this.authVersion = 0;
     this.unsubscribe = onAuthStateChanged(auth, user => this.#handleAuthChange(user));
-    this.redirectResult = this.#completeGoogleRedirect();
   }
   get currentUserId() { return this.user?.uid || null; }
   get isSignedIn() { return Boolean(this.user); }
@@ -41,23 +39,6 @@ export class AuthManager extends EventTarget {
     }
     this.#changed();
   }
-  async #completeGoogleRedirect() {
-    const pending = sessionStorage.getItem(GOOGLE_REDIRECT_KEY) === "true";
-    try {
-      const result = await getRedirectResult(this.auth);
-      await this.auth.authStateReady?.();
-      if (result?.user || this.auth.currentUser) sessionStorage.removeItem(GOOGLE_REDIRECT_KEY);
-      else if (pending) {
-        sessionStorage.removeItem(GOOGLE_REDIRECT_KEY);
-        throw new Error("Google sign-in returned without a session. Please try Google sign-in again.");
-      }
-    } catch (error) {
-      sessionStorage.removeItem(GOOGLE_REDIRECT_KEY);
-      this.error = error;
-      if (!this.user) this.status = "signedOut";
-      this.#changed();
-    }
-  }
   #changed() { this.dispatchEvent(new CustomEvent("change", { detail: this.snapshot })); }
   async signIn(email, password) {
     return this.#startSignIn(async () => {
@@ -67,14 +48,7 @@ export class AuthManager extends EventTarget {
   }
   async signInWithGoogle() {
     return this.#startSignIn(async () => {
-      await setPersistence(this.auth, browserLocalPersistence);
-      const provider = new GoogleAuthProvider();
-      try { return await signInWithPopup(this.auth, provider); }
-      catch (error) {
-        if (error.code !== "auth/popup-blocked") throw error;
-        sessionStorage.setItem(GOOGLE_REDIRECT_KEY, "true");
-        return signInWithRedirect(this.auth, provider);
-      }
+      return signInWithPopup(this.auth, new GoogleAuthProvider());
     });
   }
   async #startSignIn(operation) {

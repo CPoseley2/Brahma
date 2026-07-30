@@ -31,7 +31,9 @@ export class LoginViewModel extends EventTarget {
     catch (error) {
       this.error = error.code === "auth/quota-exceeded"
         ? new Error("Firebase’s daily email-link limit has been reached. Use Google or password sign-in instead.")
-        : error;
+        : error.code === "auth/popup-blocked"
+          ? new Error("Safari blocked the Google sign-in window. Allow pop-ups for this site, then choose Continue with Google again.")
+          : error;
     }
     this.#changed();
   }
