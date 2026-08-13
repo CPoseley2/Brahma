@@ -2,6 +2,21 @@ import { ageLabel, escapeHtml, formatDate, formatDateTime, formatTime } from "..
 
 const empty = message => `<div class="empty-state">${message}</div>`;
 const eventCard = game => `<div class="list-card"><div><div class="name">${formatDate(game.date)} · ${formatTime(game.time)}</div><p>${escapeHtml(game.type)} · ${escapeHtml(game.opponent || "TBD")} · ${escapeHtml(game.location || "Location TBD")}</p></div></div>`;
+const rsvpStatus = value => value === "yes"
+  ? { icon: "✓", label: "Attending", className: "yes" }
+  : value === "no"
+    ? { icon: "×", label: "Not attending", className: "no" }
+    : value === "maybe"
+      ? { icon: "?", label: "Maybe", className: "maybe" }
+      : { icon: "?", label: "No response", className: "none" };
+
+const practiceRsvpPreview = (event, roster) => {
+  const rows = roster.players.map(player => {
+    const status = rsvpStatus(player.rsvpStatus);
+    return `<span class="practice-rsvp-row"><span class="rsvp-status-icon ${status.className}" aria-hidden="true">${status.icon}</span><strong>${escapeHtml(player.firstName)} ${escapeHtml(player.lastName)}</strong><small>${status.label}</small></span>`;
+  }).join("") || `<span class="small muted">No active players are on the roster.</span>`;
+  return `<span class="practice-rsvp-hover"><button type="button" class="badge blue rsvp-summary-button" data-action="view-rsvps" data-id="${escapeHtml(event.id)}" aria-label="${roster.attending} attending; ${roster.responded} of ${roster.total} players responded. View RSVP roster for this practice">${roster.attending} attending · ${roster.responded}/${roster.total} responded</button><span class="practice-rsvp-popover" role="tooltip"><span class="practice-rsvp-popover-head"><strong>Practice RSVPs</strong><small>${roster.responded} of ${roster.total} responded</small></span><span class="practice-rsvp-list">${rows}</span><small class="muted">Click for the full RSVP view.</small></span></span>`;
+};
 
 export class CoachView {
   constructor(root, vm, dialogs, fieldMode) { this.root = root; this.vm = vm; this.dialogs = dialogs; this.fieldMode = fieldMode; this.selectedPracticeId = ""; }
@@ -81,7 +96,7 @@ export class CoachView {
       const rsvpRoster = this.vm.eventRsvpRoster(event.id);
       const status = session ? `${present} present · ${recorded} attendance responses` : "Attendance not recorded";
       const curriculum = lesson ? `<div class="practice-plan-link"><strong>Week ${lesson.week} · ${escapeHtml(lesson.title)}</strong><span>${lesson.blocks.reduce((sum, block) => sum + block.minutes, 0)}-minute plan</span><button class="button small" data-route="playbook" data-action="open-lesson" data-week="${lesson.week}">Open lesson plan</button></div>` : `<p class="small muted">This practice falls beyond the current 26-session curriculum.</p>`;
-      return `<article class="list-card practice-session-card"><div><div class="name">${escapeHtml(event.opponent || "Practice")} · ${formatDate(event.date)} · ${formatTime(event.time)}</div><p>${escapeHtml(event.location || "Location TBD")} · <span class="badge ${session ? "blue" : "gold"}">${status}</span></p><div class="button-row event-badges"><span class="badge">${escapeHtml(event.status || "Scheduled")}</span><button type="button" class="badge blue rsvp-summary-button" data-action="view-rsvps" data-id="${escapeHtml(event.id)}" aria-label="View RSVP roster for this practice">${rsvpRoster.attending} attending</button>${event.seriesId ? `<span class="badge blue">Recurring series</span>` : ""}</div>${curriculum}${session?.notes ? `<p class="small muted">${escapeHtml(session.notes)}</p>` : ""}</div><div class="button-row">${lesson ? `<button class="button small primary" data-action="field-mode" data-id="${event.id}">Field mode</button>` : ""}<button class="button small ${session ? "" : "primary"}" data-action="edit-session" data-id="${event.id}" data-session-id="${session?.id || ""}">${session ? "Update session" : "Log attendance"}</button>${session ? `<button class="button small danger" data-action="delete-session" data-id="${session.id}">Clear log</button>` : ""}</div></article>`;
+      return `<article class="list-card practice-session-card"><div><div class="name">${escapeHtml(event.opponent || "Practice")} · ${formatDate(event.date)} · ${formatTime(event.time)}</div><p>${escapeHtml(event.location || "Location TBD")} · <span class="badge ${session ? "blue" : "gold"}">${status}</span></p><div class="button-row event-badges"><span class="badge">${escapeHtml(event.status || "Scheduled")}</span>${practiceRsvpPreview(event, rsvpRoster)}${event.seriesId ? `<span class="badge blue">Recurring series</span>` : ""}</div>${curriculum}${session?.notes ? `<p class="small muted">${escapeHtml(session.notes)}</p>` : ""}</div><div class="button-row">${lesson ? `<button class="button small primary" data-action="field-mode" data-id="${event.id}">Field mode</button>` : ""}<button class="button small ${session ? "" : "primary"}" data-action="edit-session" data-id="${event.id}" data-session-id="${session?.id || ""}">${session ? "Update session" : "Log attendance"}</button>${session ? `<button class="button small danger" data-action="delete-session" data-id="${session.id}">Clear log</button>` : ""}</div></article>`;
     }).join("") || empty("No Practice events are scheduled. Use Manage practice schedule to add one.");
   }
   renderRoster() {

@@ -244,6 +244,7 @@ export class AppViewModel extends EventTarget {
       declined: players.filter(player => player.rsvpStatus === "no").length,
       maybe: players.filter(player => player.rsvpStatus === "maybe").length,
       noResponse: players.filter(player => !player.rsvpStatus).length,
+      responded: players.filter(player => Boolean(player.rsvpStatus)).length,
       total: players.length,
     };
   }

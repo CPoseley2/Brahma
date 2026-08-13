@@ -83,8 +83,8 @@ test("coach RSVP roster summarizes every active player consistently", () => {
   };
   const vm = new AppViewModel({ state }, { user: { uid: "coach" }, membership: { role: "assistantCoach" } });
   const roster = vm.eventRsvpRoster("practice-1");
-  assert.deepEqual({ attending: roster.attending, declined: roster.declined, maybe: roster.maybe, noResponse: roster.noResponse, total: roster.total }, {
-    attending: 1, declined: 1, maybe: 1, noResponse: 1, total: 4,
+  assert.deepEqual({ attending: roster.attending, declined: roster.declined, maybe: roster.maybe, noResponse: roster.noResponse, responded: roster.responded, total: roster.total }, {
+    attending: 1, declined: 1, maybe: 1, noResponse: 1, responded: 3, total: 4,
   });
   assert.deepEqual(roster.players.map(player => [player.id, player.rsvpStatus]), [
     ["player-a", "yes"], ["player-d", ""], ["player-c", "maybe"], ["player-b", "no"],
