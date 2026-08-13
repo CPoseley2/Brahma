@@ -1,5 +1,28 @@
 # Fair Oaks Soccer Club U6 Team Hub
 
+## Board readme
+
+This project is a working Fair Oaks Soccer Club operations prototype. It gives coordinators one place to plan a season, understand its budget, manage equipment, and communicate with families—before the season begins and with fewer last-minute changes once it is running.
+
+- **Board-friendly guide:** [Open the live Board Readme](https://fair-oaks-u6-team-hub.web.app/board-readme.html)
+- **Interactive admin demo:** [Open the Admin Workspace](https://fair-oaks-u6-team-hub.web.app/?admin-demo=1)
+
+### What the Board should know
+
+The demo uses synthetic data: 100 teams, 1,200 players, 20 fields, and a 12-week season. It is designed to make operational choices visible rather than to present final club financials.
+
+- **Season planning:** compare complete schedule scenarios, see field capacity, prepare weather contingencies, and publish only a conflict-free plan with every team placed.
+- **Budget policy:** model one registration price, late-fee alternatives, and coach-family waivers. Under the demo assumptions, a flat registration policy with one waived coach-family registration per team still funds the season; the figures must be replaced with confirmed club enrollment, contracts, and invoices before any policy decision.
+- **Gear operations:** document actual purchase records, simulate gear and uniform needs in 50-player increments, open current vendor links, and follow each team kit from packing through coach pickup.
+- **Transparency:** U6 and U8 cost views identify how equipment, permits, referees, insurance, and uniforms are allocated. Until invoices are tagged directly to a division, the app labels those values as active-player-share estimates.
+
+### Recommended Board next steps
+
+1. Review the demo as an operating model, not as a final budget.
+2. Confirm registration price, enrollment forecast, vendor quotes, and coach-waiver policy.
+3. Load the club’s actual roster, field, invoice, and uniform data for a limited preseason pilot.
+4. Approve a single published season plan and define the conditions under which a weather contingency can replace it.
+
 The live team hub is a small, framework-free MVVM application backed by Firebase Authentication and Cloud Firestore.
 
 Live app: https://fair-oaks-u6-team-hub.web.app
@@ -78,11 +101,18 @@ The Summit Pro service mapping is documented in [docs/SUMMIT-PRO-FIREBASE-MAPPIN
 
 ## Access model
 
+- Club administrators use a protected `clubAdmins/{uid}` record with `active: true`. They receive the cross-team Admin workspace instead of a single team hub and can manage teams, rosters, practice events, coach invitations, fields, budgets, gear, and club-office broadcasts. The public **Explore the admin MVP** link uses sample data stored only in that browser; it never reads or writes live family records.
 - A verified email address must have an active document at `teams/{teamId}/invites/{email}`.
 - The first successful email-link sign-in creates only that user's prescribed membership document.
 - Coaches can manage team content and private coaching observations.
 - Guardians can read only explicitly assigned players (plus legacy family assignments), shared observations for those players, their players' RSVPs, and team-wide schedule/volunteer information.
 - Everything else is denied by default in `firestore.rules`.
+
+After the administrator has a Firebase Authentication account, an authorized Firebase operator can grant access with the user UID and email:
+
+```bash
+FIREBASE_ACCESS_TOKEN="$(gcloud auth print-access-token)" npm run bootstrap:admin -- USER_UID admin@example.com
+```
 
 ## Guardian relationships
 
@@ -123,6 +153,87 @@ The event editor lets a coach set **Total RSVP slots** from 1–200, or use `0` 
 Guardians see remaining availability on the family home and full Schedule. Choosing **Going** atomically claims an open slot and saves the player's RSVP; concurrent claims cannot take the same place. The interface then marks the player **Attending**, while the RSVP selector remains editable. Changing to **Maybe** or **Not going** atomically releases the slot for another family.
 
 Firestore rules require the RSVP and slot claim or release to agree in the same atomic write. Guardians can change only the RSVP/slot for a player assigned to their account, while coaches retain event and capacity management access.
+
+## Club scheduling administration
+
+Club administrators land on a season-readiness command center rather than a weekly calendar. It summarizes team placement, coach staffing, usable fields, material planning decisions, and the readiness of the current published plan. The season planner provides:
+
+- A 12-week season calendar with blackout and contingency weeks.
+- A field-by-start-time capacity heatmap, filterable by division.
+- Comparable published, working, imported, coach-preference, and weather scenarios.
+- A smart allocator that places incomplete teams into conflict-free, age-appropriate, light-aware weekly sessions.
+- A deliberate publish gate that blocks plans with field conflicts or incomplete team placement.
+- A secondary Monday–Sunday detail view, filterable by location, approved practice start time, and division, for precise booking inspection.
+
+The published family schedule is locked. Administrators duplicate it or create a scenario before modeling changes, so normal preseason planning and weather contingencies cannot accidentally alter the live season. The admin demo contains 100 synthetic teams, 20 school and park fields, two weekly practices per team, and five comparison scenarios.
+
+### Planning scenarios
+
+A planning scenario is a private, complete version of the season schedule. It lets coordinators answer a specific “what if?” question without changing the schedule currently visible to coaches and families.
+
+- **Published season:** the one trusted, family-facing schedule. It is locked against direct edits.
+- **Working draft:** a safe copy for capacity balancing, coach preferences, manual booking changes, or staged CSV imports.
+- **Weather contingency:** a prepared fallback that can close unavailable fields and reallocate displaced teams before bad weather arrives.
+- **Imported draft:** a holding area for a registrar or scheduling-system export while its references and conflicts are reviewed.
+
+The intended workflow is: duplicate or create a scenario, model the change, compare readiness metrics, resolve every conflict and incomplete team placement, then deliberately publish. Publishing makes that scenario the new family-facing schedule and preserves the other scenarios for comparison or later reuse. Publishing does not automatically notify families; administrators use **Parent Communication** separately when the schedule change needs an announcement.
+
+### Season budget
+
+The admin-only **Season budget** workspace treats finance as part of preseason planning. Its default view is intentionally a short decision flow: read the recommended season plan, consider only options marked **Ready**, compare the money left after the season, and select a plan to see its scheduling-cost drivers. The accounting dashboard, category health, and operating ledger remain available under **Full club budget**.
+
+Registration income uses an editable three-window model:
+
+- On time = base registration + club add-on (`x`)
+- Late window 1 = base registration + `x` + late fee 1
+- Late window 2 = base registration + `x` + late fee 2
+
+The player counts across all three windows must equal the active roster before the forecast can be applied. Applying the calculator updates the registration revenue forecast used by every season-plan comparison.
+
+The demo models **1,200 players across 100 teams (12 players per team)** and includes four one-click policy scenarios:
+
+- S1: 1,200 players at one registration price
+- S2: 1,000 at the standard price and 200 with late fee 1
+- S3: 800 at the standard price, 200 with late fee 1, and 200 with late fee 2
+- S4: one flat price with 100 coach-family registrations waived—one per team
+
+The policy proof compares registration income and season-end cushion for all four. A coach payment that is held and returned after successful season completion is excluded from net season revenue, just like a waiver. This prevents a refundable payment from being presented as money available to spend. Under the demo assumptions, the flat-fee coach-waiver policy remains funded, while the dashboard isolates the extra revenue produced by late fees so administrators can see whether those fees are actually necessary.
+
+For parent- and board-level transparency, the page also shows equipment, permit, referee, insurance, and uniform forecasts for U6 and U8. Until individual invoices are tagged by division, these figures are explicitly labeled as estimates allocated by each division's share of active players; the club forecast and per-player amount stay visible beside them.
+
+The full budget tracks revenue and expenses through three states:
+
+- **Planned:** the board-approved season target.
+- **Committed:** income already confirmed or expense already contracted.
+- **Actual:** money received or paid to date.
+
+The dashboard calculates planned and projected operating surplus, expense utilization, and category-level variance. Every line has a category and owner and can be edited by a club administrator. A scenario comparison replaces the facility forecast for every scheduling option and shows money left, scheduling cost, team coverage, and dollar variance from the current plan side by side. It identifies the best ready plan while separately flagging cheaper scenarios that still contain conflicts or incomplete team placement. Selecting a comparison card opens its field, evening-lighting, and backup-reserve cost drivers below. Budget records are stored in the protected top-level `budgetItems` collection and are inaccessible to coaches and families.
+
+### Gear ordering and distribution
+
+The admin-only **Gear & distribution** workspace carries equipment through its full operational lifecycle:
+
+1. Document the prior invoice, vendor, ordered quantity, received quantity, distributed quantity, and editable unit estimate.
+2. Simulate the next season from 600–2,000 players in 50-player increments. The demo uses 12 players per team and calculates two balls plus one first aid kit, pump, ball bag, and accuracy-goal set per team. Stickers, magnets, and jerseys scale per player.
+3. Open live Amazon searches for commodity equipment or the official Soccer Post Fair Oaks location for jersey coordination. Marketplace prices are never treated as fixed; the simulator uses the unit estimate stored in the purchase record.
+4. Track each team's kit as Not packed, Needs items, Ready, or Picked up. Ready and Picked up require a complete kit, and Picked up requires the receiving coach or volunteer's name.
+
+Gear purchase records live in the admin-protected `gearItems` collection. Team handoffs live in the admin-protected `gearDistributions` collection. The simulator compares projected spend with the Equipment and Uniform budget categories without silently rewriting the budget ledger.
+
+The admin schedule importer accepts CSV files with this exact header scheme:
+
+```text
+Practice ID | Team ID | Team Name | Division | Location ID | Location Name | Practice Date | Practice Start Time | Duration Minutes | Status | Notes
+```
+
+- Dates use `YYYY-MM-DD`.
+- Start times are `16:00` through `19:00` in 30-minute increments.
+- Durations are `45`, `60`, `75`, or `90` minutes.
+- Status is `Scheduled`, `Weather watch`, or `Canceled`.
+- Team and location IDs, names, and division values must exactly match the current admin directory.
+- Practice IDs are durable upsert keys, so a later CSV can update an existing booking without creating a duplicate.
+
+The importer validates all rows and field conflicts before showing a review step. Confirming the preview stages the rows only in the selected draft scenario; nothing reaches families until an administrator publishes that complete plan.
 
 The coach-facing **Practice Sessions** view is derived from Schedule events: only events whose type is `Practice` appear. Attendance, focus areas, and reflections are stored as session records linked by `eventId`; schedule details remain controlled by the event. Existing unlinked session records are recovered by matching their practice date and title when possible.
 

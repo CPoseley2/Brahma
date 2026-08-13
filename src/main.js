@@ -15,17 +15,29 @@ import { AccountView } from "./views/account-view.js";
 import { SeasonPlaybookView } from "./views/season-playbook-view.js";
 import { FieldModeViewModel } from "./viewmodels/field-mode-view-model.js";
 import { FieldModeView } from "./views/field-mode-view.js";
+import { AdminWorkspaceModel } from "./models/admin-workspace-model.js";
+import { FirestoreAdminModel } from "./models/firestore-admin-model.js";
+import { AdminViewModel } from "./viewmodels/admin-view-model.js";
+import { AdminView } from "./views/admin-view.js";
 
 const root = document.querySelector("#app");
-const services = createFirebaseServices();
-const loginViewModel = new LoginViewModel(services.auth);
-const loginView = new LoginView(root, loginViewModel);
+const demoMode = new URLSearchParams(window.location.search).get("admin-demo") === "1";
+const services = demoMode ? null : createFirebaseServices();
+const loginViewModel = services ? new LoginViewModel(services.auth) : null;
+const loginView = services ? new LoginView(root, loginViewModel) : null;
 let renderVersion = 0;
 
 const workspaceModes = [
+  { id: "admin", label: "Admin" },
   { id: "coach", label: "Coach" },
   { id: "parent", label: "Parent" },
 ];
+
+function requestedAdminWorkspace(snapshot) {
+  if (snapshot.profile?.role !== "clubAdmin" || snapshot.profile?.active === false) return null;
+  const requested = new URLSearchParams(window.location.search).get("workspace") || "admin";
+  return workspaceModes.some(item => item.id === requested) ? requested : "admin";
+}
 
 function requestedMemberWorkspace(snapshot) {
   const profile = snapshot.profile;
@@ -50,16 +62,27 @@ async function renderSession(snapshot = services.auth.snapshot) {
   if (snapshot.status !== "ready") { loginView.mount(); return; }
   root.innerHTML = `<main class="login-shell"><div class="login-card">Loading your team…</div></main>`;
   try {
-    const workspace = requestedMemberWorkspace(snapshot);
-    const model = await FirestoreTeamHubModel.create(services.repository, snapshot.profile);
+    const workspace = requestedAdminWorkspace(snapshot);
+    if (workspace === "admin" || (snapshot.profile.role === "clubAdmin" && !workspace)) {
+      const model = await FirestoreAdminModel.create(services.adminRepository);
+      if (version !== renderVersion) return;
+      new AdminView(root, new AdminViewModel(model, { user: snapshot.user, membership: snapshot.profile }), services.auth, workspaceController("admin")).mount();
+      return;
+    }
+    const memberWorkspace = workspace || requestedMemberWorkspace(snapshot);
+    const dataMembership = workspace ? { ...snapshot.profile, role: "headCoach", familyId: null, playerIds: [], guardianIds: [] } : snapshot.profile;
+    const model = await FirestoreTeamHubModel.create(services.repository, dataMembership);
     if (version !== renderVersion) return;
     const identity = { user: snapshot.user, membership: snapshot.profile };
-    const viewModel = new AppViewModel(model, identity, { media: import.meta.env.VITE_FIREBASE_STORAGE_ENABLED === "true" ? services.media : null, teamId: services.repository.teamId, experienceRole: workspace === "parent" ? "family" : workspace === "coach" ? "coach" : null });
+    const viewModel = new AppViewModel(model, identity, { media: import.meta.env.VITE_FIREBASE_STORAGE_ENABLED === "true" ? services.media : null, teamId: services.repository.teamId, experienceRole: memberWorkspace === "parent" ? "family" : memberWorkspace === "coach" ? "coach" : null, superUser: Boolean(workspace) });
     const dialogs = new DialogView(root, viewModel);
     const eventDialog = new EventDialogView(root, viewModel);
     const fieldMode = new FieldModeView(root, viewModel, new FieldModeViewModel());
     const views = [new CoachView(root, viewModel, dialogs, fieldMode), new SeasonPlaybookView(root, viewModel), new MessageView(root, viewModel), new SharedView(root, viewModel, dialogs, eventDialog), new FamilyView(root, viewModel), new RosterImportView(root, viewModel), new AccountView(root, services.auth), fieldMode, dialogs, eventDialog];
-    new ShellView(root, viewModel, views, services.auth, workspace ? workspaceController(workspace) : null).mount();
+    const modeController = workspace
+      ? workspaceController(workspace)
+      : memberWorkspace ? { ...workspaceController(memberWorkspace), modes: workspaceModes.filter(item => item.id !== "admin") } : null;
+    new ShellView(root, viewModel, views, services.auth, modeController).mount();
   } catch (error) {
     root.innerHTML = `<main class="login-shell"><section class="login-card"><p class="eyebrow dark">Fair Oaks Soccer Club</p><h1>Could not load the team</h1><p class="login-intro"></p><p class="login-message error"></p><div class="button-row"><button class="button primary" data-action="retry-team">Try loading again</button><button class="button" data-action="sign-out">Sign out</button></div></section></main>`;
     root.querySelector(".login-intro").textContent = `${snapshot.user?.email || "Your account"} is signed in and has team access, but the team data did not finish loading.`;
@@ -69,10 +92,15 @@ async function renderSession(snapshot = services.auth.snapshot) {
   }
 }
 
-services.auth.addEventListener("change", event => renderSession(event.detail));
-renderSession();
-if (services.auth.isEmailLink()) {
-  services.auth.completeEmailLink()
-    .then(completed => { if (completed) window.history.replaceState({}, document.title, window.location.pathname); })
-    .catch(() => loginView.mount());
+if (demoMode) {
+  const model = new AdminWorkspaceModel();
+  new AdminView(root, new AdminViewModel(model, { user: { uid: "admin-demo", email: "admin@fairoakssoccer.org" }, membership: { role: "clubAdmin" } }, { demo: true })).mount();
+} else {
+  services.auth.addEventListener("change", event => renderSession(event.detail));
+  renderSession();
+  if (services.auth.isEmailLink()) {
+    services.auth.completeEmailLink()
+      .then(completed => { if (completed) window.history.replaceState({}, document.title, window.location.pathname); })
+      .catch(() => loginView.mount());
+  }
 }

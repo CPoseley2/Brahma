@@ -7,9 +7,10 @@
     "dev": "vite",
     "build": "vite build",
     "preview": "vite preview",
-    "test": "node --test tests/event-series.test.js tests/family-dashboard.test.js tests/field-mode.test.js tests/login-view-model.test.js tests/messaging.test.js tests/practice-sessions.test.js tests/recurrence.test.js tests/roster-importer.test.js tests/season-playbook.test.js tests/team-hub-repository.test.js",
+    "test": "node --test tests/admin-domain.test.js tests/budget-domain.test.js tests/gear-domain.test.js tests/schedule-importer.test.js tests/event-series.test.js tests/family-dashboard.test.js tests/field-mode.test.js tests/login-view-model.test.js tests/messaging.test.js tests/practice-sessions.test.js tests/recurrence.test.js tests/roster-importer.test.js tests/season-playbook.test.js tests/team-hub-repository.test.js",
     "test:rules": "firebase emulators:exec --only firestore 'node --test tests/firestore.rules.test.js'",
-    "bootstrap:team": "node scripts/bootstrap-team.mjs"
+    "bootstrap:team": "node scripts/bootstrap-team.mjs",
+    "bootstrap:admin": "node scripts/bootstrap-admin.mjs"
   },
   "devDependencies": {
     "@firebase/rules-unit-testing": "^5.0.0",

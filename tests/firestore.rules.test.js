@@ -14,6 +14,7 @@ const path = value => `teams/${teamId}/${value}`;
 async function seed() {
   await environment.withSecurityRulesDisabled(async context => {
     const db = context.firestore();
+    await setDoc(doc(db, "clubAdmins/admin"), { email: "admin@example.com", active: true });
     await setDoc(doc(db, `teams/${teamId}`), { name: "Fair Oaks Soccer Club U6" });
     await setDoc(doc(db, path("members/coach")), { role: "headCoach", familyId: null, active: true, email: "coach@example.com" });
     await setDoc(doc(db, path("members/assistant")), { role: "assistantCoach", familyId: null, active: true, email: "assistant@example.com" });
@@ -117,6 +118,23 @@ describe("team privacy", () => {
     await assertSucceeds(getDocs(query(collection(db, path("messages")), where("guardianId", "==", "relationship-one"))));
     await assertFails(getDocs(query(collection(db, path("messages")), where("guardianId", "==", "relationship-two"))));
     await assertFails(getDoc(doc(db, path("messages/message-two"))));
+  });
+  test("club admins can manage cross-team operations but ordinary members cannot", async () => {
+    const adminDb = auth("admin", "admin@example.com");
+    await assertSucceeds(getDocs(collection(adminDb, "teams")));
+    await assertSucceeds(setDoc(doc(adminDb, "fields/new-field"), { name: "New Field", status: "Open" }));
+    await assertSucceeds(setDoc(doc(adminDb, "budgetItems/field-permits"), { name: "Field permits", type: "Expense", planned: 50000 }));
+    await assertSucceeds(setDoc(doc(adminDb, "gearItems/balls"), { name: "Soccer balls", vendor: "Amazon", orderedQty: 200 }));
+    await assertSucceeds(setDoc(doc(adminDb, "gearDistributions/team-a"), { teamId: "team-a", status: "Ready" }));
+    await assertSucceeds(setDoc(doc(adminDb, "coaches/new-coach"), { name: "New Coach", email: "new-coach@example.com", clearanceStatus: "Pending" }));
+    await assertSucceeds(setDoc(doc(adminDb, "scheduleScenarios/rain-plan"), { name: "Rain plan", status: "draft", practices: [] }));
+    await assertSucceeds(setDoc(doc(adminDb, path("players/admin-player")), { firstName: "Admin", familyId: null }));
+    await assertFails(getDocs(collection(auth("guardian-a", "a@example.com"), "teams")));
+    await assertFails(setDoc(doc(auth("coach", "coach@example.com"), "fields/blocked"), { name: "Blocked" }));
+    await assertFails(setDoc(doc(auth("coach", "coach@example.com"), "budgetItems/blocked"), { name: "Blocked", type: "Expense" }));
+    await assertFails(setDoc(doc(auth("coach", "coach@example.com"), "gearItems/blocked"), { name: "Blocked" }));
+    await assertFails(setDoc(doc(auth("coach", "coach@example.com"), "gearDistributions/blocked"), { teamId: "team-a" }));
+    await assertFails(setDoc(doc(auth("coach", "coach@example.com"), "scheduleScenarios/blocked"), { name: "Blocked", status: "draft" }));
   });
 });
 
