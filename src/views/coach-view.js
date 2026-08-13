@@ -28,6 +28,7 @@ export class CoachView {
     if (action === "field-mode") this.fieldMode.open(id);
     if (action === "delete-session" && confirm("Delete this practice session?")) this.vm.remove("sessions", id);
     if (action === "new-player") this.dialogs.openPlayer();
+    if (action === "add-coach") this.dialogs.openCoachPromotion();
     if (action === "edit-player") this.dialogs.openPlayer(id);
     if (action === "save-settings") this.#saveSettings();
     if (action === "export") this.#export();
@@ -77,9 +78,10 @@ export class CoachView {
       const session = this.vm.sessionForPractice(event.id); const attendance = Object.values(session?.attendance || {});
       const lesson = this.vm.lessonForPractice(event.id);
       const present = attendance.filter(value => value === "present").length; const recorded = attendance.filter(Boolean).length;
+      const rsvpRoster = this.vm.eventRsvpRoster(event.id);
       const status = session ? `${present} present · ${recorded} attendance responses` : "Attendance not recorded";
       const curriculum = lesson ? `<div class="practice-plan-link"><strong>Week ${lesson.week} · ${escapeHtml(lesson.title)}</strong><span>${lesson.blocks.reduce((sum, block) => sum + block.minutes, 0)}-minute plan</span><button class="button small" data-route="playbook" data-action="open-lesson" data-week="${lesson.week}">Open lesson plan</button></div>` : `<p class="small muted">This practice falls beyond the current 26-session curriculum.</p>`;
-      return `<article class="list-card practice-session-card"><div><div class="name">${escapeHtml(event.opponent || "Practice")} · ${formatDate(event.date)} · ${formatTime(event.time)}</div><p>${escapeHtml(event.location || "Location TBD")} · <span class="badge ${session ? "blue" : "gold"}">${status}</span></p><div class="button-row event-badges"><span class="badge">${escapeHtml(event.status || "Scheduled")}</span>${event.seriesId ? `<span class="badge blue">Recurring series</span>` : ""}</div>${curriculum}${session?.notes ? `<p class="small muted">${escapeHtml(session.notes)}</p>` : ""}</div><div class="button-row">${lesson ? `<button class="button small primary" data-action="field-mode" data-id="${event.id}">Field mode</button>` : ""}<button class="button small ${session ? "" : "primary"}" data-action="edit-session" data-id="${event.id}" data-session-id="${session?.id || ""}">${session ? "Update session" : "Log attendance"}</button>${session ? `<button class="button small danger" data-action="delete-session" data-id="${session.id}">Clear log</button>` : ""}</div></article>`;
+      return `<article class="list-card practice-session-card"><div><div class="name">${escapeHtml(event.opponent || "Practice")} · ${formatDate(event.date)} · ${formatTime(event.time)}</div><p>${escapeHtml(event.location || "Location TBD")} · <span class="badge ${session ? "blue" : "gold"}">${status}</span></p><div class="button-row event-badges"><span class="badge">${escapeHtml(event.status || "Scheduled")}</span><button type="button" class="badge blue rsvp-summary-button" data-action="view-rsvps" data-id="${escapeHtml(event.id)}" aria-label="View RSVP roster for this practice">${rsvpRoster.attending} attending</button>${event.seriesId ? `<span class="badge blue">Recurring series</span>` : ""}</div>${curriculum}${session?.notes ? `<p class="small muted">${escapeHtml(session.notes)}</p>` : ""}</div><div class="button-row">${lesson ? `<button class="button small primary" data-action="field-mode" data-id="${event.id}">Field mode</button>` : ""}<button class="button small ${session ? "" : "primary"}" data-action="edit-session" data-id="${event.id}" data-session-id="${session?.id || ""}">${session ? "Update session" : "Log attendance"}</button>${session ? `<button class="button small danger" data-action="delete-session" data-id="${session.id}">Clear log</button>` : ""}</div></article>`;
     }).join("") || empty("No Practice events are scheduled. Use Manage practice schedule to add one.");
   }
   renderRoster() {
@@ -95,9 +97,10 @@ export class CoachView {
     this.root.querySelector("#rosterBody").innerHTML = players.map(player => {
       const guardians = this.vm.guardiansForPlayer(player.id);
       const primaryMember = this.vm.memberForEmail(player.familyEmail);
+      const primaryCoach = this.vm.hasCoachPrivileges(player.familyEmail) ? `<span class="badge gold">Coach</span>` : "";
       const primaryAccess = primaryMember
-        ? `<span class="badge blue">Joined</span><span class="small muted access-time">${primaryMember.lastLoginAt ? `Last login ${formatDateTime(primaryMember.lastLoginAt)}` : "Last login not recorded yet"}</span>`
-        : player.familyEmail ? `<span class="badge gold">Invited</span>` : "";
+        ? `<span class="badge blue">Joined</span>${primaryCoach}<span class="small muted access-time">${primaryMember.lastLoginAt ? `Last login ${formatDateTime(primaryMember.lastLoginAt)}` : "Last login not recorded yet"}</span>`
+        : player.familyEmail ? `<span class="badge gold">Invited</span>${primaryCoach}` : "";
       const primaryContact = player.familyEmail || player.familyPhone
         ? `<strong>Primary contact</strong> ${primaryAccess}<br>${escapeHtml(player.familyEmail || "No email")}${player.familyPhone ? `<br>${escapeHtml(player.familyPhone)}` : ""}`
         : `<span class="muted">No primary contact</span>`;
@@ -105,8 +108,9 @@ export class CoachView {
         ? `<div class="roster-guardian-summary"><strong>${guardians.length} app guardian${guardians.length === 1 ? "" : "s"}</strong>${guardians.map(guardian => {
           const member = this.vm.memberForEmail(guardian.email);
           const status = member ? `<span class="badge blue">Joined</span>` : `<span class="badge gold">Invited</span>`;
+          const coach = this.vm.hasCoachPrivileges(guardian.email) ? `<span class="badge gold">Coach</span>` : "";
           const login = member ? `<span class="small muted access-time">${member.lastLoginAt ? `Last login ${formatDateTime(member.lastLoginAt)}` : "Last login not recorded yet"}</span>` : "";
-          return `<div class="roster-guardian-access"><span>${escapeHtml(guardian.name)}</span>${status}${login}</div>`;
+          return `<div class="roster-guardian-access"><span>${escapeHtml(guardian.name)}</span>${status}${coach}${login}</div>`;
         }).join("")}</div>`
         : `<div class="roster-guardian-summary"><span class="small muted">No scoped app access added</span></div>`;
       return `<tr><td><span class="name">${escapeHtml(player.firstName)} ${escapeHtml(player.lastName)}</span></td><td><span class="badge">${ageLabel(player.dateOfBirth)}</span></td><td>${formatDate(player.dateOfBirth)}</td><td>${primaryContact}${guardianSummary}</td><td><span class="badge ${player.active ? "" : "gray"}">${player.active ? "Active" : "Inactive"}</span></td><td><button class="button small" data-action="edit-player" data-id="${player.id}">Edit</button></td></tr>`;

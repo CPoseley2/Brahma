@@ -1,6 +1,9 @@
 import { escapeHtml, formatDateTime } from "../shared/format.js";
 
 const empty = message => `<div class="empty-state">${escapeHtml(message)}</div>`;
+const messageBody = body => String(body || "").split(/(https?:\/\/[^\s<]+)/g)
+  .map(part => /^https?:\/\//.test(part) ? `<a href="${escapeHtml(part)}" target="_blank" rel="noopener noreferrer">${escapeHtml(part)}</a>` : escapeHtml(part))
+  .join("");
 
 export class MessageView {
   constructor(root, vm) {
@@ -84,7 +87,7 @@ export class MessageView {
     const items = (this.vm.state.messages || []).filter(item => conversation && this.#belongsTo(item, conversation)).sort((a, b) => a.createdAt.localeCompare(b.createdAt));
     this.root.querySelector("#messageThreadList").innerHTML = items.map(item => {
       const fromCoach = item.senderRole === "coach";
-      return `<article class="message-bubble ${fromCoach ? "from-coach" : "from-family"}"><div>${escapeHtml(item.body)}</div><span>${escapeHtml(item.senderLabel || (fromCoach ? "Coach" : label))} · ${formatDateTime(item.createdAt)}</span></article>`;
+      return `<article class="message-bubble ${fromCoach ? "from-coach" : "from-family"}"><div>${messageBody(item.body)}</div><span>${escapeHtml(item.senderLabel || (fromCoach ? "Coach" : label))} · ${formatDateTime(item.createdAt)}</span></article>`;
     }).join("") || empty(coach ? "No private messages with this guardian yet." : "Start a private conversation with the coaching staff.");
     this.root.querySelector("#privateMessageSubmit").disabled = !conversation;
   }

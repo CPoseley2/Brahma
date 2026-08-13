@@ -175,6 +175,40 @@ describe("authorized writes", () => {
     await assertSucceeds(setDoc(doc(auth("coach", "coach@example.com"), path("guardians/new-relationship")), data));
     await assertFails(setDoc(doc(auth("assistant", "assistant@example.com"), path("guardians/blocked-relationship")), data));
   });
+  test("an assistant coach can promote a parent and send onboarding while preserving parent scope", async () => {
+    const db = auth("assistant", "assistant@example.com"); const batch = writeBatch(db);
+    batch.set(doc(db, path("guardians/promotion-parent-a")), {
+      playerId: "player-a", name: "Alpha Parent", email: "a@example.com", relationship: "parent", active: true,
+      createdAt: "2026-08-13T18:00:00.000Z", createdByUid: "assistant",
+    });
+    batch.set(doc(db, path("invites/a@example.com")), {
+      email: "a@example.com", role: "assistantCoach", familyId: "family-a", playerIds: ["player-a"], guardianIds: ["promotion-parent-a"], active: true,
+    });
+    batch.update(doc(db, path("members/guardian-a")), {
+      role: "assistantCoach", familyId: "family-a", playerIds: ["player-a"], guardianIds: ["promotion-parent-a"], active: true,
+    });
+    batch.set(doc(db, path("messages/promotion-message")), {
+      guardianId: "promotion-parent-a", playerId: "player-a", body: "You have been upgraded to a coach. Read /coach-readme.html",
+      senderUid: "assistant", senderRole: "coach", senderLabel: "Coach", createdAt: "2026-08-13T18:00:00.000Z",
+    });
+    await assertSucceeds(batch.commit());
+    const membership = (await getDoc(doc(db, path("members/guardian-a")))).data();
+    assert.equal(membership.role, "assistantCoach");
+    assert.equal(membership.familyId, "family-a");
+    assert.deepEqual(membership.playerIds, ["player-a"]);
+    await assertSucceeds(setDoc(doc(auth("guardian-a", "a@example.com"), path("messages/promoted-parent-message")), {
+      guardianId: "promotion-parent-a", playerId: "player-a", body: "Writing from Parent view.",
+      senderUid: "guardian-a", senderRole: "guardian", senderLabel: "Alpha Parent", createdAt: "2026-08-13T18:05:00.000Z",
+    }));
+  });
+  test("an assistant coach cannot use promotion access to grant head coach", async () => {
+    const db = auth("assistant", "assistant@example.com"); const batch = writeBatch(db);
+    batch.set(doc(db, path("invites/a@example.com")), {
+      email: "a@example.com", role: "headCoach", familyId: "family-a", playerIds: ["player-a"], guardianIds: ["relationship-one"], active: true,
+    });
+    batch.update(doc(db, path("members/guardian-a")), { role: "headCoach" });
+    await assertFails(batch.commit());
+  });
   test("coaches can broadcast to the team but guardians cannot", async () => {
     const data = { title: "Schedule", body: "Practice moved.", familyIds: [], sentByUid: "coach", sentByLabel: "Head Coach", sentAt: "2026-07-22T13:00:00.000Z", attachments: [], actionButton: null };
     await assertSucceeds(setDoc(doc(auth("coach", "coach@example.com"), path("broadcasts/broadcast-2")), data));

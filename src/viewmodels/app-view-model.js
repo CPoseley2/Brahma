@@ -102,6 +102,36 @@ export class AppViewModel extends EventTarget {
     const normalized = String(email || "").trim().toLowerCase();
     return normalized ? (this.state.members || []).find(member => member.active && member.email?.toLowerCase() === normalized) || null : null;
   }
+  hasCoachPrivileges(email) {
+    const normalized = String(email || "").trim().toLowerCase();
+    const memberRole = this.memberForEmail(normalized)?.role;
+    const inviteRole = (this.state.invites || []).find(item => item.active && item.email?.toLowerCase() === normalized)?.role;
+    return [memberRole, inviteRole].some(role => ["headCoach", "assistantCoach"].includes(role));
+  }
+  get coachPromotionCandidates() {
+    const candidates = new Map();
+    const add = ({ player, name, email, guardianId = "" }) => {
+      const normalizedEmail = String(email || "").trim().toLowerCase();
+      if (!player || !/^\S+@\S+\.\S+$/.test(normalizedEmail)) return;
+      if (this.hasCoachPrivileges(normalizedEmail)) return;
+      const existing = candidates.get(normalizedEmail);
+      const value = {
+        id: `${player.id}:${normalizedEmail}`,
+        playerId: player.id,
+        playerName: `${player.firstName} ${player.lastName}`.trim(),
+        familyId: player.familyId || null,
+        guardianId: guardianId || existing?.guardianId || "",
+        name: name || existing?.name || `${player.lastName} parent`,
+        email: normalizedEmail,
+      };
+      if (!existing || guardianId) candidates.set(normalizedEmail, value);
+    };
+    this.activePlayers.forEach(player => {
+      add({ player, name: `${player.lastName} parent`, email: player.familyEmail });
+      this.guardiansForPlayer(player.id).forEach(guardian => add({ player, name: guardian.name, email: guardian.email, guardianId: guardian.id }));
+    });
+    return [...candidates.values()].sort((a, b) => a.name.localeCompare(b.name));
+  }
   lastObservation(playerId, sharedOnly = false) {
     return this.state.observations.filter(item => item.playerId === playerId && (!sharedOnly || item.shared))
       .sort((a, b) => b.date.localeCompare(a.date))[0] || null;
@@ -201,6 +231,22 @@ export class AppViewModel extends EventTarget {
       : attending;
     return { limited: true, capacity, assigned, available: Math.max(0, capacity - assigned) };
   }
+  eventRsvpRoster(gameId) {
+    const responses = new Map((this.state.rsvps || [])
+      .filter(item => item.gameId === gameId)
+      .map(item => [item.playerId, item.status]));
+    const players = this.activePlayers
+      .map(player => ({ ...player, rsvpStatus: responses.get(player.id) || "" }))
+      .sort((a, b) => a.lastName.localeCompare(b.lastName) || a.firstName.localeCompare(b.firstName));
+    return {
+      players,
+      attending: players.filter(player => player.rsvpStatus === "yes").length,
+      declined: players.filter(player => player.rsvpStatus === "no").length,
+      maybe: players.filter(player => player.rsvpStatus === "maybe").length,
+      noResponse: players.filter(player => !player.rsvpStatus).length,
+      total: players.length,
+    };
+  }
   async setRsvp(gameId, playerId, status) {
     if (!["yes", "no", "maybe"].includes(status)) throw new Error("Choose Going, Maybe, or Not going.");
     const existing = (this.state.rsvps || []).find(item => item.gameId === gameId && item.playerId === playerId);
@@ -267,6 +313,22 @@ export class AppViewModel extends EventTarget {
     const existing = this.guardianRelationships.find(item => item.id === id);
     if (!existing) throw new Error("That guardian relationship could not be found.");
     await this.model.revokeGuardian(existing); this.changed();
+  }
+  async promoteParentToCoach(candidate) {
+    if (this.role !== "coach") throw new Error("Only a coach can promote a parent to coach.");
+    const eligible = this.coachPromotionCandidates.find(item => item.id === candidate?.id);
+    if (!eligible) throw new Error("That parent is no longer eligible for promotion.");
+    if (!this.model.promoteParentToCoach) throw new Error("Coach promotion is not available in this workspace.");
+    const value = {
+      ...eligible,
+      messageId: uid("message"),
+      readmeUrl: typeof window === "undefined" ? "/coach-readme.html" : new URL("/coach-readme.html", window.location.origin).href,
+      promotedByUid: this.userId,
+      promotedByLabel: this.identity?.membership.role === "headCoach" ? "Head Coach" : "Coach",
+    };
+    const saved = await this.model.promoteParentToCoach(value);
+    this.changed();
+    return `${saved.name} is now an assistant coach. Their parent access was preserved and the onboarding message was sent.`;
   }
   async uploadDrillImage(drillId, file) {
     if (!this.isHeadCoach && this.role !== "coach") throw new Error("Only coaches can manage drill-card artwork.");

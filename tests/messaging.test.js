@@ -62,6 +62,28 @@ test("coach roster membership lookup reports accepted guardian accounts", () => 
   assert.equal(vm.memberForEmail("not-joined@example.com"), null);
 });
 
+test("coach promotion candidates combine primary and guardian contacts and exclude coaches", () => {
+  const modelState = state();
+  modelState.players.push({ id: "player-a", firstName: "Tallac", lastName: "Player", familyId: "family-a", familyEmail: "primary@example.com", active: true });
+  modelState.guardians.push({ id: "guardian-a", playerId: "player-a", name: "Pat Parent", email: "parent@example.com", relationship: "parent", active: true });
+  modelState.members.push({ id: "coach-user", email: "primary@example.com", role: "assistantCoach", active: true });
+  const vm = new AppViewModel({ state: modelState }, { user: { uid: "assistant" }, membership: { role: "assistantCoach", familyId: null } });
+  assert.deepEqual(vm.coachPromotionCandidates.map(item => item.email), ["parent@example.com"]);
+  assert.equal(vm.coachPromotionCandidates[0].guardianId, "guardian-a");
+});
+
+test("an assistant coach can initiate a parent promotion", async () => {
+  let saved;
+  const modelState = state();
+  modelState.players.push({ id: "player-a", firstName: "Tallac", lastName: "Player", familyId: "family-a", familyEmail: "parent@example.com", active: true });
+  const model = { state: modelState, promoteParentToCoach: async value => { saved = value; return { ...value, name: value.name }; } };
+  const vm = new AppViewModel(model, { user: { uid: "assistant" }, membership: { role: "assistantCoach", familyId: null } });
+  const feedback = await vm.promoteParentToCoach(vm.coachPromotionCandidates[0]);
+  assert.equal(saved.promotedByUid, "assistant");
+  assert.match(saved.readmeUrl, /coach-readme\.html$/);
+  assert.match(feedback, /assistant coach/);
+});
+
 test("a coach can create a team-wide broadcast", async () => {
   let saved;
   const model = { state: state(), sendBroadcast: async value => { saved = value; model.state.broadcasts.push(value); } };

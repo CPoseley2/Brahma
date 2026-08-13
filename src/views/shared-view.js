@@ -38,6 +38,8 @@ export class SharedView {
       const availabilityBadge = availability.limited
         ? `<span class="badge ${availability.available === 0 ? "gold" : "blue"}">${availability.available} of ${availability.capacity} slots available</span>`
         : `<span class="badge gray">No attendance limit</span>`;
+      const rsvpRoster = this.vm.eventRsvpRoster(game.id);
+      const coachRsvp = this.vm.role === "coach" ? `<button type="button" class="badge blue rsvp-summary-button" data-action="view-rsvps" data-id="${escapeHtml(game.id)}" aria-label="View RSVP roster for this event">${rsvpRoster.attending} attending</button>` : "";
       const familyActions = this.vm.role === "family" && family ? `<div class="family-rsvps">${family.players.map(player => {
         const current = this.vm.state.rsvps.find(item => item.gameId === game.id && item.playerId === player.id)?.status || "";
         const attending = current === "yes";
@@ -46,7 +48,7 @@ export class SharedView {
       }).join("")}</div>` : "";
       const seriesActions = game.seriesId ? `<button class="button small" data-action="edit-game-series" data-id="${game.id}">Edit series</button><button class="button small danger" data-action="delete-game-series" data-id="${game.id}">Delete series</button>` : "";
       const actions = this.vm.role === "coach" ? `<div class="button-row event-actions"><button class="button small" data-action="edit-game" data-id="${game.id}">Edit this event</button>${seriesActions}<button class="button small danger" data-action="delete-game" data-id="${game.id}">Delete this event</button></div>` : "";
-      return `<article class="list-card"><div><div class="name">${formatDate(game.date)} · ${formatTime(game.time)}</div><p>${escapeHtml(game.type)} · ${escapeHtml(game.opponent || "TBD")} · ${escapeHtml(game.location || "Location TBD")}</p>${game.notes ? `<p class="small muted">${escapeHtml(game.notes)}</p>` : ""}<div class="button-row event-badges"><span class="badge">${escapeHtml(game.status)}</span>${availabilityBadge}${game.seriesId ? `<span class="badge blue">Recurring series</span>` : ""}</div>${familyActions}</div>${actions}</article>`;
+      return `<article class="list-card"><div><div class="name">${formatDate(game.date)} · ${formatTime(game.time)}</div><p>${escapeHtml(game.type)} · ${escapeHtml(game.opponent || "TBD")} · ${escapeHtml(game.location || "Location TBD")}</p>${game.notes ? `<p class="small muted">${escapeHtml(game.notes)}</p>` : ""}<div class="button-row event-badges"><span class="badge">${escapeHtml(game.status)}</span>${coachRsvp}${availabilityBadge}${game.seriesId ? `<span class="badge blue">Recurring series</span>` : ""}</div>${familyActions}</div>${actions}</article>`;
     }).join("") || empty("No team events have been entered yet.");
   }
   async #changeRsvp(select) {
