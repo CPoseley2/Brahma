@@ -244,6 +244,69 @@ export class TeamHubRepository {
     await this.firestore.saveMultiple(entries);
     return { name, email, guardian, invite, members, message };
   }
+  async inviteCoach(value, currentState) {
+    const email = String(value.email || "").trim().toLowerCase();
+    const name = String(value.name || "").trim();
+    if (!name || !/^\S+@\S+\.\S+$/.test(email)) throw new Error("Enter a coach name and valid email address.");
+    const existingInvite = await this.firestore.fetch(teamModels.invite, email, this.context);
+    const matchingMembers = await this.firestore.fetchWhere(teamModels.member, [{ field: "email", value: email }], this.context);
+    const isRosterContact = (currentState.players || []).some(player => player.familyEmail?.trim().toLowerCase() === email)
+      || (currentState.guardians || []).some(guardian => guardian.active !== false && guardian.email?.trim().toLowerCase() === email);
+    if (isRosterContact && !coachRoles.has(existingInvite?.role) && !matchingMembers.some(member => coachRoles.has(member.role))) {
+      throw new Error("This email belongs to a roster contact. Promote the parent from their roster entry to preserve Parent access.");
+    }
+    if (matchingMembers.some(member => coachRoles.has(member.role))) throw new Error(`${email} already has coaching privileges.`);
+    if (coachRoles.has(existingInvite?.role)) return { ...existingInvite, name: existingInvite.name || name };
+    if (existingInvite?.active) throw new Error(`${email} already has team access. Promote them from their roster entry instead.`);
+    const invite = {
+      id: email,
+      email,
+      name,
+      role: "assistantCoach",
+      familyId: null,
+      playerIds: [],
+      guardianIds: [],
+      active: true,
+      invitedAt: value.invitedAt,
+      invitedByUid: value.invitedByUid,
+    };
+    await this.firestore.save(teamModels.invite, invite, this.context);
+    return invite;
+  }
+  async claimPlayerForCoach(value, currentState, membership) {
+    if (!isCoachMembership(membership)) throw new Error("Only a coach can claim a player.");
+    const player = (currentState.players || []).find(item => item.id === value.playerId && item.active !== false);
+    if (!player) throw new Error("That player could not be found.");
+    const email = String(value.email || "").trim().toLowerCase();
+    if (!email || email !== String(membership.email || "").trim().toLowerCase()) throw new Error("You can claim a player only for your own coach account.");
+    const existingPlayerIds = membership.playerIds || [];
+    if (existingPlayerIds.includes(player.id) || (membership.familyId && membership.familyId === player.familyId)) throw new Error("Your account already has Parent access to this player.");
+    const existingGuardian = (currentState.guardians || []).find(item => item.active !== false && item.playerId === player.id && item.email?.trim().toLowerCase() === email);
+    const guardian = existingGuardian || {
+      id: value.guardianId,
+      playerId: player.id,
+      name: String(value.name || "Coach parent").trim(),
+      email,
+      relationship: "parent",
+      active: true,
+      createdAt: value.claimedAt,
+      createdByUid: value.claimedByUid,
+    };
+    const member = {
+      ...membership,
+      playerIds: [...new Set([...existingPlayerIds, player.id])],
+      guardianIds: [...new Set([...(membership.guardianIds || []), guardian.id])],
+      lastClaimedPlayerId: player.id,
+      lastClaimedGuardianId: guardian.id,
+      lastClaimedAt: value.claimedAt,
+    };
+    const entries = [
+      ...(!existingGuardian ? [{ model: teamModels.guardian, value: guardian, context: this.context }] : []),
+      { model: teamModels.member, value: member, context: this.context, merge: true },
+    ];
+    await this.firestore.saveMultiple(entries);
+    return { guardian, member };
+  }
   async saveEvent(event) {
     await this.validateEventSlotCapacity(event.id, event.slotCapacity || 0);
     await this.firestore.upsert(teamModels.event, event, this.context);

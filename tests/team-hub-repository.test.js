@@ -166,6 +166,43 @@ test("coach promotion creates parent access when the roster email has no guardia
   assert.equal(saved.length, 3);
 });
 
+test("a coach invitation creates assistant access without parent scope", async () => {
+  let written;
+  const firestore = {
+    fetch: async () => null,
+    fetchWhere: async () => [],
+    save: async (_model, value) => { written = value; return value; },
+  };
+  const repository = new TeamHubRepository(firestore, "fair-oaks-u6");
+  const invite = await repository.inviteCoach({
+    name: "Coach Jordan", email: "JORDAN@example.com", invitedAt: "2026-08-13T20:00:00.000Z", invitedByUid: "assistant",
+  }, { players: [], guardians: [] });
+  assert.equal(written.email, "jordan@example.com");
+  assert.equal(invite.role, "assistantCoach");
+  assert.equal(invite.familyId, null);
+  assert.deepEqual(invite.playerIds, []);
+  assert.deepEqual(invite.guardianIds, []);
+});
+
+test("claiming a player associates only the current coach membership", async () => {
+  const saved = [];
+  const firestore = { saveMultiple: async entries => saved.push(...entries) };
+  const repository = new TeamHubRepository(firestore, "fair-oaks-u6");
+  const membership = { id: "assistant", email: "assistant@example.com", role: "assistantCoach", familyId: null, playerIds: [], guardianIds: [], active: true };
+  const result = await repository.claimPlayerForCoach({
+    playerId: "player-a", guardianId: "claim-a", name: "Coach Alex", email: "assistant@example.com",
+    claimedByUid: "assistant", claimedAt: "2026-08-13T20:00:00.000Z",
+  }, { players: [{ id: "player-a", firstName: "Alpha", active: true }], guardians: [] }, membership);
+  assert.deepEqual(result.member.playerIds, ["player-a"]);
+  assert.deepEqual(result.member.guardianIds, ["claim-a"]);
+  assert.equal(result.guardian.email, membership.email);
+  assert.equal(result.guardian.relationship, "parent");
+  assert.equal(saved.length, 2);
+  await assert.rejects(() => repository.claimPlayerForCoach({
+    playerId: "player-a", guardianId: "claim-b", name: "Someone Else", email: "other@example.com",
+  }, { players: [{ id: "player-a", active: true }], guardians: [] }, membership), /only for your own coach account/);
+});
+
 test("adding a capacity creates deterministic slots and assigns existing attendees", async () => {
   let batch;
   const firestore = {

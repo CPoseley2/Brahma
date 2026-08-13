@@ -15,11 +15,14 @@ export class DialogView {
       if (action === "revoke-guardian") this.#revokeGuardian(event.target.closest("[data-guardian-id]").dataset.guardianId);
       if (action === "close-guardian") this.root.querySelector("#guardianDialog").close();
       if (action === "close-coach-promotion") this.root.querySelector("#coachPromotionDialog").close();
+      if (action === "promote-contact") this.openCoachPromotion(event.target.closest("[data-candidate-id]").dataset.candidateId);
+      if (action === "close-coach-invite") this.root.querySelector("#coachInviteDialog").close();
       if (action === "view-rsvps") this.openRsvpRoster(event.target.closest("[data-id]").dataset.id);
       if (action === "close-rsvp-roster") this.root.querySelector("#rsvpRosterDialog").close();
     });
     this.root.querySelector("#guardianForm").addEventListener("submit", event => this.#saveGuardian(event));
     this.root.querySelector("#coachPromotionForm").addEventListener("submit", event => this.#promoteCoach(event));
+    this.root.querySelector("#coachInviteForm").addEventListener("submit", event => this.#inviteCoach(event));
   }
   render() {
     const playerDialog = this.root.querySelector("#playerDialog");
@@ -72,7 +75,7 @@ export class DialogView {
     form.querySelector("#guardianFormFeedback").innerHTML = "";
     dialog.showModal();
   }
-  openCoachPromotion() {
+  openCoachPromotion(candidateId = "") {
     const dialog = this.root.querySelector("#coachPromotionDialog"); const form = dialog.querySelector("form");
     const candidates = this.vm.coachPromotionCandidates;
     form.reset();
@@ -80,9 +83,18 @@ export class DialogView {
       ? `<option value="">Choose a roster contact</option>${candidates.map(candidate => `<option value="${escapeHtml(candidate.id)}">${escapeHtml(candidate.name)} — ${escapeHtml(candidate.email)} — ${escapeHtml(candidate.playerName)}</option>`).join("")}`
       : `<option value="">No eligible parent contacts</option>`;
     form.elements.candidate.disabled = !candidates.length;
+    if (candidateId && candidates.some(candidate => candidate.id === candidateId)) form.elements.candidate.value = candidateId;
     form.querySelector("[type=submit]").disabled = !candidates.length;
     form.querySelector("[type=submit]").textContent = "Review & add coach";
     form.querySelector("#coachPromotionFeedback").innerHTML = candidates.length ? "" : `<div class="login-message">Add a parent email or guardian relationship to a player before promoting them.</div>`;
+    dialog.showModal();
+  }
+  openCoachInvite() {
+    const dialog = this.root.querySelector("#coachInviteDialog"); const form = dialog.querySelector("form");
+    form.reset();
+    form.querySelector("[type=submit]").disabled = false;
+    form.querySelector("[type=submit]").textContent = "Send coach invite";
+    form.querySelector("#coachInviteFeedback").innerHTML = "";
     dialog.showModal();
   }
   openRsvpRoster(eventId) {
@@ -189,6 +201,23 @@ export class DialogView {
     } catch (error) {
       feedback.innerHTML = `<div class="login-message error">${escapeHtml(error.message)}</div>`;
       button.disabled = false;
+    }
+  }
+  async #inviteCoach(event) {
+    event.preventDefault();
+    const form = event.currentTarget; if (!form.reportValidity()) return;
+    const name = formValue(form, "name").trim(); const email = formValue(form, "email").trim().toLowerCase();
+    if (!confirm(`Invite ${name} (${email}) as an assistant coach?\n\nThey will receive coach access and a secure sign-in link by email.`)) return;
+    const button = form.querySelector("[type=submit]"); const feedback = form.querySelector("#coachInviteFeedback");
+    button.disabled = true; feedback.innerHTML = `<div class="login-message">Creating coach access and sending the secure sign-in link…</div>`;
+    try {
+      const result = await this.vm.inviteCoach({ name, email });
+      feedback.innerHTML = `<div class="login-message success">${escapeHtml(result)}</div>`;
+      button.textContent = "Invite sent";
+    } catch (error) {
+      feedback.innerHTML = `<div class="login-message ${error.inviteSaved ? "" : "error"}">${escapeHtml(error.message)}</div>`;
+      button.disabled = false;
+      if (error.inviteSaved) button.textContent = "Send email again";
     }
   }
   async #revokeGuardian(id) {

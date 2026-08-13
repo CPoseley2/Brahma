@@ -54,7 +54,12 @@ async function renderSession(snapshot = services.auth.snapshot) {
     const model = await FirestoreTeamHubModel.create(services.repository, snapshot.profile);
     if (version !== renderVersion) return;
     const identity = { user: snapshot.user, membership: snapshot.profile };
-    const viewModel = new AppViewModel(model, identity, { media: import.meta.env.VITE_FIREBASE_STORAGE_ENABLED === "true" ? services.media : null, teamId: services.repository.teamId, experienceRole: workspace === "parent" ? "family" : workspace === "coach" ? "coach" : null });
+    const viewModel = new AppViewModel(model, identity, {
+      media: import.meta.env.VITE_FIREBASE_STORAGE_ENABLED === "true" ? services.media : null,
+      teamId: services.repository.teamId,
+      experienceRole: workspace === "parent" ? "family" : workspace === "coach" ? "coach" : null,
+      sendCoachInvite: (email, continueUrl) => services.auth.sendInvitationLink(email, continueUrl),
+    });
     const dialogs = new DialogView(root, viewModel);
     const eventDialog = new EventDialogView(root, viewModel);
     const fieldMode = new FieldModeView(root, viewModel, new FieldModeViewModel());
