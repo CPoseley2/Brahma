@@ -28,7 +28,7 @@ export const coachTemplate = `
   <div id="sessionsList" class="card-list"></div>
 </section>
 <section id="roster" class="view coach-only">
-  <div class="page-head"><div><p class="eyebrow dark">Private</p><h2>Roster</h2><p>Manage player details and guardian access. This private information is never shown to other families.</p></div><div class="button-row"><button class="button" data-action="print">Print</button><button class="button primary" data-action="new-player">Add player</button></div></div>
+  <div class="page-head"><div><p class="eyebrow dark">Private</p><h2>Roster</h2><p>Manage player details and guardian access. This private information is never shown to other families.</p></div><div class="button-row"><button class="button" data-action="print">Print</button><button class="button" data-action="add-coach">Add coach</button><button class="button primary" data-action="new-player">Add player</button></div></div>
   <div class="toolbar"><input id="rosterSearch" type="search" placeholder="Search player or guardian contact"><select id="rosterFilter"><option value="active">Active</option><option value="all">All</option><option value="inactive">Inactive</option></select></div>
   <div class="panel table-panel"><div class="table-wrap"><table><thead><tr><th>Player</th><th>Age</th><th>Birthday</th><th>Contacts & access</th><th>Status</th><th></th></tr></thead><tbody id="rosterBody"></tbody></table></div></div>
 </section>

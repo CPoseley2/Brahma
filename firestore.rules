@@ -34,8 +34,31 @@ service cloud.firestore {
       return getAfter(/databases/$(database)/documents/teams/$(teamId)/events/$(eventId)/slots/$(slotId)).data;
     }
     function invitePath(teamId) { return /databases/$(database)/documents/teams/$(teamId)/invites/$(request.auth.token.email); }
+    function inviteForPath(teamId, email) { return /databases/$(database)/documents/teams/$(teamId)/invites/$(email); }
     function validOwnInvite(teamId) {
       return signedIn() && request.auth.token.email_verified == true && exists(invitePath(teamId)) && get(invitePath(teamId)).data.active == true;
+    }
+    function isCoachPromotionInvite(teamId, email) {
+      return request.resource.data.email == email
+        && request.resource.data.role == 'assistantCoach'
+        && request.resource.data.active == true
+        && request.resource.data.get('playerIds', []).size() > 0
+        && request.resource.data.get('guardianIds', []).size() > 0
+        && existsAfter(/databases/$(database)/documents/teams/$(teamId)/guardians/$(request.resource.data.guardianIds[0]))
+        && getAfter(/databases/$(database)/documents/teams/$(teamId)/guardians/$(request.resource.data.guardianIds[0])).data.email == email
+        && getAfter(/databases/$(database)/documents/teams/$(teamId)/guardians/$(request.resource.data.guardianIds[0])).data.playerId in request.resource.data.playerIds;
+    }
+    function isCoachPromotionMember(teamId) {
+      return resource.data.role in ['guardian', 'parent']
+        && request.resource.data.role == 'assistantCoach'
+        && request.resource.data.email == resource.data.email
+        && request.resource.data.active == true
+        && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['role', 'familyId', 'playerIds', 'guardianIds', 'active'])
+        && existsAfter(inviteForPath(teamId, request.resource.data.email))
+        && getAfter(inviteForPath(teamId, request.resource.data.email)).data.role == 'assistantCoach'
+        && request.resource.data.familyId == getAfter(inviteForPath(teamId, request.resource.data.email)).data.get('familyId', null)
+        && request.resource.data.playerIds == getAfter(inviteForPath(teamId, request.resource.data.email)).data.get('playerIds', [])
+        && request.resource.data.guardianIds == getAfter(inviteForPath(teamId, request.resource.data.email)).data.get('guardianIds', []);
     }
 
     match /teams/{teamId} {
@@ -52,7 +75,7 @@ service cloud.firestore {
           && request.resource.data.playerIds == get(invitePath(teamId)).data.get('playerIds', [])
           && request.resource.data.guardianIds == get(invitePath(teamId)).data.get('guardianIds', [])
           && request.resource.data.active == true;
-        allow update: if isHeadCoach(teamId) || (
+        allow update: if isHeadCoach(teamId) || (isCoach(teamId) && isCoachPromotionMember(teamId)) || (
           signedIn()
           && request.auth.uid == userId
           && resource.data.active == true
@@ -63,8 +86,15 @@ service cloud.firestore {
       }
 
       match /invites/{email} {
-        allow read: if isHeadCoach(teamId) || (signedIn() && request.auth.token.email == email);
-        allow write: if isHeadCoach(teamId);
+        allow read: if isCoach(teamId) || (signedIn() && request.auth.token.email == email);
+        allow create: if isHeadCoach(teamId) || (isCoach(teamId) && isCoachPromotionInvite(teamId, email));
+        allow update: if isHeadCoach(teamId) || (
+          isCoach(teamId)
+          && resource.data.role in ['guardian', 'parent']
+          && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['email', 'role', 'familyId', 'playerIds', 'guardianIds', 'active'])
+          && isCoachPromotionInvite(teamId, email)
+        );
+        allow delete: if isHeadCoach(teamId);
       }
 
       match /families/{requestedFamilyId} {
@@ -77,7 +107,17 @@ service cloud.firestore {
 
       match /guardians/{guardianId} {
         allow read: if isCoach(teamId) || hasGuardianConversation(teamId, guardianId);
-        allow create, update, delete: if isHeadCoach(teamId);
+        allow create: if isHeadCoach(teamId) || (
+          isCoach(teamId)
+          && request.resource.data.keys().hasOnly(['playerId', 'name', 'email', 'relationship', 'active', 'createdAt', 'createdByUid'])
+          && exists(/databases/$(database)/documents/teams/$(teamId)/players/$(request.resource.data.playerId))
+          && validText(request.resource.data.name, 100)
+          && validText(request.resource.data.email, 254)
+          && request.resource.data.relationship == 'parent'
+          && request.resource.data.active == true
+          && request.resource.data.createdByUid == request.auth.uid
+        );
+        allow update, delete: if isHeadCoach(teamId);
       }
 
       match /players/{playerId} {
@@ -214,8 +254,8 @@ service cloud.firestore {
                 (
                   request.resource.data.get('guardianId', null) != null
                   && request.resource.data.get('playerId', null) != null
-                  && exists(/databases/$(database)/documents/teams/$(teamId)/guardians/$(request.resource.data.guardianId))
-                  && get(/databases/$(database)/documents/teams/$(teamId)/guardians/$(request.resource.data.guardianId)).data.playerId == request.resource.data.playerId
+                  && existsAfter(/databases/$(database)/documents/teams/$(teamId)/guardians/$(request.resource.data.guardianId))
+                  && getAfter(/databases/$(database)/documents/teams/$(teamId)/guardians/$(request.resource.data.guardianId)).data.playerId == request.resource.data.playerId
                 )
                 || (
                   request.resource.data.get('familyId', null) != null
@@ -224,7 +264,7 @@ service cloud.firestore {
               )
             )
             || (
-              member(teamId).role == 'guardian'
+              member(teamId).role in ['guardian', 'parent', 'headCoach', 'assistantCoach']
               && request.resource.data.senderRole == 'guardian'
               && (
                 (

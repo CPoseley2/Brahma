@@ -115,12 +115,14 @@ export class FamilyDashboardViewModel {
 
   #familyActions(familyId) {
     const volunteers = this.app.state.volunteerSlots || [];
+    const guardianIds = new Set(this.app.identity?.membership?.guardianIds || []);
+    const messages = (this.app.state.messages || []).filter(message => message.familyId === familyId || guardianIds.has(message.guardianId));
     const broadcasts = [...(this.app.state.broadcasts || [])]
       .sort((a, b) => String(b.sentAt).localeCompare(String(a.sentAt)));
     return {
       openVolunteers: volunteers.filter(item => !item.assigneeFamilyId).length,
       familyVolunteers: volunteers.filter(item => item.assigneeFamilyId === familyId).length,
-      messageCount: (this.app.state.messages || []).length,
+      messageCount: messages.length,
       latestBroadcast: broadcasts[0] || null,
     };
   }
