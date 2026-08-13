@@ -9,7 +9,8 @@ export class AppViewModel extends EventTarget {
     this.model = model;
     this.identity = identity;
     this.identityLocked = Boolean(identity);
-    this.role = identity ? (["headCoach", "assistantCoach"].includes(identity.membership.role) ? "coach" : "family") : localStorage.getItem("fairOaksU6.role") || "coach";
+    this.isSuperUser = Boolean(services.superUser);
+    this.role = services.experienceRole || (identity ? (["headCoach", "assistantCoach"].includes(identity.membership.role) ? "coach" : "family") : localStorage.getItem("fairOaksU6.role") || "coach");
     this.familyId = identity ? (identity.membership.familyId || "") : (localStorage.getItem("fairOaksU6.family") || "");
     this.userId = identity?.user.uid || null;
     this.media = services.media || null; this.teamId = services.teamId || "";
@@ -51,7 +52,7 @@ export class AppViewModel extends EventTarget {
     return this.state.sessions.find(item => item.eventId === eventId)
       || this.state.sessions.find(item => !item.eventId && event && item.date === event.date && (!item.title || item.title === event.opponent));
   }
-  get isHeadCoach() { return this.identity?.membership.role === "headCoach"; }
+  get isHeadCoach() { return this.isSuperUser || this.identity?.membership.role === "headCoach"; }
   get families() {
     if (this.state.families?.length) return this.state.families.map(family => ({ ...family, players: this.activePlayers.filter(player => player.familyId === family.id) }));
     const families = new Map();
