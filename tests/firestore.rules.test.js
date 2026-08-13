@@ -170,6 +170,43 @@ describe("authorized writes", () => {
     const db = auth("assistant", "assistant@example.com");
     await assertFails(setDoc(doc(db, path("invites/blocked@example.com")), { email: "blocked@example.com", role: "guardian", familyId: "family-a", active: true }));
   });
+  test("any coach can invite a new assistant coach without granting Parent scope", async () => {
+    const invite = {
+      email: "new-coach@example.com", name: "New Coach", role: "assistantCoach", familyId: null,
+      playerIds: [], guardianIds: [], active: true, invitedAt: "2026-08-13T20:00:00.000Z", invitedByUid: "assistant",
+    };
+    await assertSucceeds(setDoc(doc(auth("assistant", "assistant@example.com"), path("invites/new-coach@example.com")), invite));
+    await assertFails(setDoc(doc(auth("assistant", "assistant@example.com"), path("invites/head-coach@example.com")), { ...invite, email: "head-coach@example.com", role: "headCoach" }));
+    await assertFails(setDoc(doc(auth("guardian-a", "a@example.com"), path("invites/parent-created@example.com")), { ...invite, email: "parent-created@example.com", invitedByUid: "guardian-a" }));
+  });
+  test("a coach can self-claim a player but cannot attach that player to another coach", async () => {
+    const db = auth("assistant", "assistant@example.com"); const batch = writeBatch(db);
+    batch.set(doc(db, path("guardians/assistant-claim-a")), {
+      playerId: "player-a", name: "Assistant Coach", email: "assistant@example.com", relationship: "parent", active: true,
+      createdAt: "2026-08-13T20:00:00.000Z", createdByUid: "assistant",
+    });
+    batch.update(doc(db, path("members/assistant")), {
+      playerIds: ["player-a"], guardianIds: ["assistant-claim-a"], lastClaimedPlayerId: "player-a",
+      lastClaimedGuardianId: "assistant-claim-a", lastClaimedAt: "2026-08-13T20:00:00.000Z",
+    });
+    await assertSucceeds(batch.commit());
+    const membership = (await getDoc(doc(db, path("members/assistant")))).data();
+    assert.deepEqual(membership.playerIds, ["player-a"]);
+
+    const blocked = writeBatch(db);
+    blocked.set(doc(db, path("guardians/coach-claim-b")), {
+      playerId: "player-b", name: "Head Coach", email: "coach@example.com", relationship: "parent", active: true,
+      createdAt: "2026-08-13T20:01:00.000Z", createdByUid: "assistant",
+    });
+    blocked.update(doc(db, path("members/coach")), {
+      playerIds: ["player-b"], guardianIds: ["coach-claim-b"], lastClaimedPlayerId: "player-b",
+      lastClaimedGuardianId: "coach-claim-b", lastClaimedAt: "2026-08-13T20:01:00.000Z",
+    });
+    await assertFails(blocked.commit());
+  });
+  test("coach self-claim rules do not block ordinary login activity updates", async () => {
+    await assertSucceeds(updateDoc(doc(auth("assistant", "assistant@example.com"), path("members/assistant")), { lastLoginAt: "2026-08-13T20:02:00.000Z" }));
+  });
   test("only the head coach can create guardian relationships", async () => {
     const data = { playerId: "player-a", name: "New Guardian", email: "new-guardian@example.com", relationship: "friend", active: true };
     await assertSucceeds(setDoc(doc(auth("coach", "coach@example.com"), path("guardians/new-relationship")), data));

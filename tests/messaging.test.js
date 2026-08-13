@@ -84,6 +84,59 @@ test("an assistant coach can initiate a parent promotion", async () => {
   assert.match(feedback, /assistant coach/);
 });
 
+test("a dual-access coach can open Parent view without seeing unrelated players", () => {
+  const modelState = state();
+  modelState.players.push(
+    { id: "player-a", firstName: "Alpha", lastName: "Player", familyId: "family-a", active: true },
+    { id: "player-b", firstName: "Beta", lastName: "Player", familyId: "family-b", active: true },
+  );
+  const vm = new AppViewModel({ state: modelState }, {
+    user: { uid: "assistant", email: "assistant@example.com" },
+    membership: { role: "assistantCoach", familyId: null, playerIds: ["player-a"], guardianIds: ["guardian-a"] },
+  }, { experienceRole: "family" });
+  assert.equal(vm.role, "family");
+  assert.deepEqual(vm.activePlayers.map(player => player.id), ["player-a"]);
+  assert.deepEqual(vm.families.map(family => family.id), ["family-a"]);
+});
+
+test("any coach can invite a new assistant coach and send a secure sign-in link", async () => {
+  let saved; let emailed;
+  const modelState = state();
+  modelState.invites = [];
+  const model = { state: modelState, inviteCoach: async value => { saved = value; return value; } };
+  const vm = new AppViewModel(model, {
+    user: { uid: "assistant", email: "assistant@example.com" },
+    membership: { role: "assistantCoach", familyId: null },
+  }, { sendCoachInvite: async (email, url) => { emailed = { email, url }; } });
+  const feedback = await vm.inviteCoach({ name: " New Coach ", email: "NEW@EXAMPLE.COM" });
+  assert.equal(saved.email, "new@example.com");
+  assert.equal(saved.invitedByUid, "assistant");
+  assert.equal(emailed.email, "new@example.com");
+  assert.match(emailed.url, /workspace=coach/);
+  assert.match(feedback, /secure sign-in link/);
+});
+
+test("a coach can claim a player only for their own account", async () => {
+  let saved;
+  const modelState = state();
+  modelState.players.push({ id: "player-a", firstName: "Alpha", lastName: "Player", familyId: "family-a", active: true });
+  const membership = { role: "assistantCoach", email: "assistant@example.com", familyId: null, playerIds: [], guardianIds: [] };
+  const model = {
+    state: modelState,
+    claimPlayerForCoach: async value => {
+      saved = value;
+      return { guardian: { id: value.guardianId, playerId: value.playerId }, member: { ...membership, playerIds: [value.playerId], guardianIds: [value.guardianId] } };
+    },
+  };
+  const vm = new AppViewModel(model, { user: { uid: "assistant", email: "assistant@example.com", displayName: "Coach Alex" }, membership });
+  const feedback = await vm.claimPlayer("player-a");
+  assert.equal(saved.email, "assistant@example.com");
+  assert.equal(saved.name, "Coach Alex");
+  assert.deepEqual(vm.identity.membership.playerIds, ["player-a"]);
+  assert.match(feedback, /Parent view/);
+  await assert.rejects(() => vm.claimPlayer("player-a"), /already have Parent access/);
+});
+
 test("a coach can create a team-wide broadcast", async () => {
   let saved;
   const model = { state: state(), sendBroadcast: async value => { saved = value; model.state.broadcasts.push(value); } };

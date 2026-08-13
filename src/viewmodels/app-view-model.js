@@ -9,10 +9,11 @@ export class AppViewModel extends EventTarget {
     this.model = model;
     this.identity = identity;
     this.identityLocked = Boolean(identity);
-    this.role = identity ? (["headCoach", "assistantCoach"].includes(identity.membership.role) ? "coach" : "family") : localStorage.getItem("fairOaksU6.role") || "coach";
+    const membershipRole = identity ? (["headCoach", "assistantCoach"].includes(identity.membership.role) ? "coach" : "family") : null;
+    this.role = services.experienceRole && membershipRole === "coach" ? services.experienceRole : membershipRole || localStorage.getItem("fairOaksU6.role") || "coach";
     this.familyId = identity ? (identity.membership.familyId || "") : (localStorage.getItem("fairOaksU6.family") || "");
     this.userId = identity?.user.uid || null;
-    this.media = services.media || null; this.teamId = services.teamId || "";
+    this.media = services.media || null; this.teamId = services.teamId || ""; this.sendCoachInvite = services.sendCoachInvite || null;
     this.lastError = null;
     this.route = this.defaultRoute;
     this.stopMessaging = this.model.startMessaging?.(
@@ -28,7 +29,13 @@ export class AppViewModel extends EventTarget {
       ? [["coach-dashboard", "Dashboard"], ["messages", "Messages"], ["development", "Player Development"], ["sessions", "Practices"], ["playbook", "Season Plan"], ["drills", "Drill Cards"], ["roster", "Roster"], ["schedule", "Schedule"], ["volunteers", "Volunteers"], ["standards", "Standards"], ["data-settings", "Data"]]
       : [["family-home", "Season Home"], ["messages", "Messages"], ["my-player", "Season Story"], ["schedule", "Schedule"], ["volunteers", "Help Out"], ["team-philosophy", "Our Philosophy"]];
   }
-  get activePlayers() { return this.state.players.filter(player => player.active); }
+  get activePlayers() {
+    const active = this.state.players.filter(player => player.active);
+    if (this.role !== "family" || !this.identity) return active;
+    const allowed = new Set(this.identity.membership.playerIds || []);
+    const familyId = this.identity.membership.familyId || null;
+    return active.filter(player => allowed.has(player.id) || (familyId && player.familyId === familyId));
+  }
   get practiceEvents() { return [...this.state.games].filter(event => String(event.type).toLowerCase() === "practice").sort((a, b) => (a.date + a.time).localeCompare(b.date + b.time)); }
   get curriculumPracticeEvents() { return this.practiceEvents.filter(event => event.status !== "Canceled"); }
   get drillCards() {
@@ -53,7 +60,11 @@ export class AppViewModel extends EventTarget {
   }
   get isHeadCoach() { return this.identity?.membership.role === "headCoach"; }
   get families() {
-    if (this.state.families?.length) return this.state.families.map(family => ({ ...family, players: this.activePlayers.filter(player => player.familyId === family.id) }));
+    if (this.state.families?.length) {
+      const families = this.state.families.map(family => ({ ...family, players: this.activePlayers.filter(player => player.familyId === family.id) }));
+      const isDualAccessCoach = this.role === "family" && ["headCoach", "assistantCoach"].includes(this.identity?.membership.role);
+      return isDualAccessCoach ? families.filter(family => family.players.length) : families;
+    }
     const families = new Map();
     this.activePlayers.forEach(player => {
       const key = (player.familyEmail || player.familyPhone || player.lastName).trim().toLowerCase();
@@ -132,6 +143,17 @@ export class AppViewModel extends EventTarget {
     });
     return [...candidates.values()].sort((a, b) => a.name.localeCompare(b.name));
   }
+  coachPromotionCandidate(playerId, email) {
+    const normalized = String(email || "").trim().toLowerCase();
+    return this.coachPromotionCandidates.find(candidate => candidate.playerId === playerId && candidate.email === normalized) || null;
+  }
+  hasParentAccessToPlayer(playerId) {
+    const player = this.player(playerId);
+    const membership = this.identity?.membership || {};
+    const allowed = new Set(membership.playerIds || []);
+    return Boolean(player && (allowed.has(playerId) || (membership.familyId && player.familyId === membership.familyId)));
+  }
+  canClaimPlayer(playerId) { return this.role === "coach" && Boolean(this.player(playerId)) && !this.hasParentAccessToPlayer(playerId); }
   lastObservation(playerId, sharedOnly = false) {
     return this.state.observations.filter(item => item.playerId === playerId && (!sharedOnly || item.shared))
       .sort((a, b) => b.date.localeCompare(a.date))[0] || null;
@@ -330,6 +352,55 @@ export class AppViewModel extends EventTarget {
     const saved = await this.model.promoteParentToCoach(value);
     this.changed();
     return `${saved.name} is now an assistant coach. Their parent access was preserved and the onboarding message was sent.`;
+  }
+  async inviteCoach({ name, email }) {
+    if (this.role !== "coach") throw new Error("Only a coach can invite another coach.");
+    const cleanName = String(name || "").trim();
+    const cleanEmail = String(email || "").trim().toLowerCase();
+    if (!cleanName) throw new Error("Enter the coach’s name.");
+    if (!/^\S+@\S+\.\S+$/.test(cleanEmail)) throw new Error("Enter a valid coach email address.");
+    if (this.coachPromotionCandidates.some(candidate => candidate.email === cleanEmail)) {
+      throw new Error("This email belongs to a roster contact. Use Make coach beside that parent so their Parent access is preserved.");
+    }
+    if (!this.model.inviteCoach) throw new Error("Coach invitations are not available in this workspace.");
+    const saved = await this.model.inviteCoach({
+      name: cleanName,
+      email: cleanEmail,
+      invitedByUid: this.userId,
+      invitedAt: new Date().toISOString(),
+    });
+    if (!this.sendCoachInvite) throw new Error("Coach access was saved, but email delivery is not configured.");
+    const continueUrl = typeof window === "undefined"
+      ? "https://team.example/?workspace=coach"
+      : new URL("?workspace=coach", `${window.location.origin}${window.location.pathname}`).href;
+    try {
+      await this.sendCoachInvite(cleanEmail, continueUrl);
+    } catch (cause) {
+      const error = new Error(`Coach access was saved for ${cleanEmail}, but the sign-in email could not be sent. Try sending the invitation again.`);
+      error.inviteSaved = true; error.cause = cause; throw error;
+    }
+    this.changed();
+    return `${saved.name || cleanName} was invited as an assistant coach. A secure sign-in link was sent to ${cleanEmail}.`;
+  }
+  async claimPlayer(playerId) {
+    if (!this.canClaimPlayer(playerId)) throw new Error("You already have Parent access to this player, or the player is no longer available.");
+    if (!this.model.claimPlayerForCoach) throw new Error("Player claiming is not available in this workspace.");
+    const player = this.player(playerId);
+    const email = String(this.identity?.user.email || this.identity?.membership.email || "").trim().toLowerCase();
+    if (!email) throw new Error("Your coach account needs a verified email address before you can claim a player.");
+    const name = String(this.identity?.user.displayName || this.identity?.membership.name || email.split("@")[0]).trim();
+    const saved = await this.model.claimPlayerForCoach({
+      playerId,
+      guardianId: uid("guardian"),
+      name,
+      email,
+      claimedByUid: this.userId,
+      claimedAt: new Date().toISOString(),
+    });
+    Object.assign(this.identity.membership, saved.member);
+    this.familyId = saved.member.familyId || "";
+    this.changed();
+    return `${player.firstName} ${player.lastName} is now associated with your account. Parent view is available from the workspace switcher.`;
   }
   async uploadDrillImage(drillId, file) {
     if (!this.isHeadCoach && this.role !== "coach") throw new Error("Only coaches can manage drill-card artwork.");

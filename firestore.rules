@@ -60,6 +60,48 @@ service cloud.firestore {
         && request.resource.data.playerIds == getAfter(inviteForPath(teamId, request.resource.data.email)).data.get('playerIds', [])
         && request.resource.data.guardianIds == getAfter(inviteForPath(teamId, request.resource.data.email)).data.get('guardianIds', []);
     }
+    function isNewCoachInvite(teamId, email) {
+      return isCoach(teamId)
+        && request.resource.data.keys().hasOnly(['email', 'name', 'role', 'familyId', 'playerIds', 'guardianIds', 'active', 'invitedAt', 'invitedByUid'])
+        && request.resource.data.email == email
+        && validText(request.resource.data.name, 100)
+        && request.resource.data.role == 'assistantCoach'
+        && request.resource.data.get('familyId', null) == null
+        && request.resource.data.get('playerIds', []).size() == 0
+        && request.resource.data.get('guardianIds', []).size() == 0
+        && request.resource.data.active == true
+        && request.resource.data.invitedAt is string
+        && request.resource.data.invitedByUid == request.auth.uid;
+    }
+    function isSelfCoachClaimMember(teamId, userId) {
+      let oldPlayerIds = resource.data.get('playerIds', []);
+      let oldGuardianIds = resource.data.get('guardianIds', []);
+      let newPlayerIds = request.resource.data.get('playerIds', []);
+      let newGuardianIds = request.resource.data.get('guardianIds', []);
+      return isCoach(teamId)
+        && request.auth.uid == userId
+        && resource.data.role in ['headCoach', 'assistantCoach']
+        && request.resource.data.role == resource.data.role
+        && request.resource.data.email == resource.data.email
+        && request.resource.data.active == resource.data.active
+        && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['playerIds', 'guardianIds', 'lastClaimedPlayerId', 'lastClaimedGuardianId', 'lastClaimedAt'])
+        && validText(request.resource.data.get('lastClaimedPlayerId', ''), 200)
+        && validText(request.resource.data.get('lastClaimedGuardianId', ''), 200)
+        && request.resource.data.lastClaimedAt is string
+        && newPlayerIds.size() == oldPlayerIds.size() + 1
+        && newGuardianIds.size() == oldGuardianIds.size() + 1
+        && newPlayerIds.hasAll(oldPlayerIds)
+        && newGuardianIds.hasAll(oldGuardianIds)
+        && request.resource.data.lastClaimedPlayerId in newPlayerIds
+        && !(request.resource.data.lastClaimedPlayerId in oldPlayerIds)
+        && request.resource.data.lastClaimedGuardianId in newGuardianIds
+        && !(request.resource.data.lastClaimedGuardianId in oldGuardianIds)
+        && existsAfter(/databases/$(database)/documents/teams/$(teamId)/guardians/$(request.resource.data.lastClaimedGuardianId))
+        && getAfter(/databases/$(database)/documents/teams/$(teamId)/guardians/$(request.resource.data.lastClaimedGuardianId)).data.email == resource.data.email
+        && getAfter(/databases/$(database)/documents/teams/$(teamId)/guardians/$(request.resource.data.lastClaimedGuardianId)).data.relationship == 'parent'
+        && getAfter(/databases/$(database)/documents/teams/$(teamId)/guardians/$(request.resource.data.lastClaimedGuardianId)).data.active == true
+        && getAfter(/databases/$(database)/documents/teams/$(teamId)/guardians/$(request.resource.data.lastClaimedGuardianId)).data.playerId == request.resource.data.lastClaimedPlayerId;
+    }
 
     match /teams/{teamId} {
       allow read: if isMember(teamId);
@@ -75,7 +117,7 @@ service cloud.firestore {
           && request.resource.data.playerIds == get(invitePath(teamId)).data.get('playerIds', [])
           && request.resource.data.guardianIds == get(invitePath(teamId)).data.get('guardianIds', [])
           && request.resource.data.active == true;
-        allow update: if isHeadCoach(teamId) || (isCoach(teamId) && isCoachPromotionMember(teamId)) || (
+        allow update: if isHeadCoach(teamId) || (isCoach(teamId) && isCoachPromotionMember(teamId)) || isSelfCoachClaimMember(teamId, userId) || (
           signedIn()
           && request.auth.uid == userId
           && resource.data.active == true
@@ -87,13 +129,13 @@ service cloud.firestore {
 
       match /invites/{email} {
         allow read: if isCoach(teamId) || (signedIn() && request.auth.token.email == email);
-        allow create: if isHeadCoach(teamId) || (isCoach(teamId) && isCoachPromotionInvite(teamId, email));
+        allow create: if isHeadCoach(teamId) || (isCoach(teamId) && isCoachPromotionInvite(teamId, email)) || isNewCoachInvite(teamId, email);
         allow update: if isHeadCoach(teamId) || (
           isCoach(teamId)
           && resource.data.role in ['guardian', 'parent']
           && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['email', 'role', 'familyId', 'playerIds', 'guardianIds', 'active'])
           && isCoachPromotionInvite(teamId, email)
-        );
+        ) || (resource.data.active == false && isNewCoachInvite(teamId, email));
         allow delete: if isHeadCoach(teamId);
       }
 
