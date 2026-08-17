@@ -4,7 +4,7 @@ import { AppViewModel } from "../src/viewmodels/app-view-model.js";
 
 const state = () => ({
   team: {}, families: [{ id: "family-a", displayName: "Alpha family" }, { id: "family-b", displayName: "Beta family" }],
-  guardians: [], members: [], players: [], games: [], sessions: [], volunteerSlots: [], observations: [], rsvps: [], broadcasts: [], messages: [], skillFramework: [],
+  guardians: [], members: [], players: [], games: [], sessions: [], volunteerSlots: [], observations: [], rsvps: [], broadcasts: [], messages: [], documents: [], skillFramework: [],
 });
 
 test("a guardian message is always confined to their own family thread", async () => {
@@ -135,6 +135,73 @@ test("a coach can claim a player only for their own account", async () => {
   assert.deepEqual(vm.identity.membership.playerIds, ["player-a"]);
   assert.match(feedback, /Parent view/);
   await assert.rejects(() => vm.claimPlayer("player-a"), /already have Parent access/);
+});
+
+test("Docs is visible in both portals and coaches can upload valid files", async () => {
+  let saved; let uploaded;
+  const modelState = state();
+  const model = { state: modelState, saveDocument: async value => { saved = value; return value; }, deleteDocument: async () => {} };
+  const media = {
+    upload: async (files, directory, ownerId) => {
+      uploaded = { files, directory, ownerId };
+      return [{ fileName: "field-map.pdf", url: "https://example.com/field-map.pdf", path: `teams/team-a/documents/${ownerId}/field-map.pdf`, contentType: "application/pdf", size: 2400 }];
+    },
+    delete: async () => {},
+  };
+  const coach = new AppViewModel(model, { user: { uid: "assistant" }, membership: { role: "assistantCoach" } }, { media, teamId: "team-a" });
+  const parent = new AppViewModel({ state: modelState }, { user: { uid: "parent" }, membership: { role: "guardian", familyId: "family-a" } });
+  assert.ok(coach.navigation.some(([route]) => route === "documents"));
+  assert.ok(parent.navigation.some(([route]) => route === "documents"));
+  const document = await coach.uploadDocument({ title: " Field map ", category: "map", file: { name: "field-map.pdf", type: "application/pdf", size: 2400 } });
+  assert.equal(saved.title, "Field map");
+  assert.equal(document.category, "map");
+  assert.equal(uploaded.directory, "teams/team-a/documents");
+  assert.equal(modelState.documents.length, 1);
+  await assert.rejects(() => parent.uploadDocument({ title: "Photo", category: "photo", file: { name: "photo.png", type: "image/png", size: 100 } }), /Only coaches/);
+});
+
+test("coaches can edit, physically duplicate, and delete Docs while parents cannot", async () => {
+  const operations = [];
+  const original = {
+    id: "document-a", title: "Field map", category: "map", fileName: "map.png", url: "https://example.com/map.png",
+    path: "teams/team-a/documents/document-a/map.png", contentType: "image/png", size: 1200,
+    uploadedAt: "2026-08-16T12:00:00.000Z", uploadedByUid: "coach", updatedAt: "2026-08-16T12:00:00.000Z", updatedByUid: "coach",
+  };
+  const modelState = state(); modelState.documents.push(original);
+  const model = {
+    state: modelState,
+    saveDocument: async value => { operations.push(["save", value]); return value; },
+    deleteDocument: async id => { operations.push(["delete-metadata", id]); },
+  };
+  const media = {
+    copy: async value => { operations.push(["copy-file", value]); return { fileName: "map.png", url: "https://example.com/map-copy.png", path: `teams/team-a/documents/${value.ownerId}/map.png`, contentType: "image/png", size: 1200 }; },
+    delete: async path => { operations.push(["delete-file", path]); },
+  };
+  const coach = new AppViewModel(model, { user: { uid: "assistant" }, membership: { role: "assistantCoach" } }, { media, teamId: "team-a" });
+  const edited = await coach.updateDocument("document-a", { title: "Updated map", category: "map" });
+  assert.equal(edited.title, "Updated map");
+  const copied = await coach.copyDocument("document-a");
+  assert.match(copied.title, /copy$/);
+  assert.equal(copied.copiedFromId, "document-a");
+  assert.notEqual(copied.path, original.path);
+  const deleted = await coach.deleteDocument("document-a");
+  assert.equal(deleted.cleanupFailed, false);
+  assert.deepEqual(operations.slice(-2), [["delete-metadata", "document-a"], ["delete-file", original.path]]);
+
+  const parent = new AppViewModel({ state: modelState }, { user: { uid: "parent" }, membership: { role: "guardian", familyId: "family-a" } });
+  await assert.rejects(() => parent.updateDocument(copied.id, { title: "Blocked", category: "map" }), /Only coaches/);
+  await assert.rejects(() => parent.copyDocument(copied.id), /Only coaches/);
+  await assert.rejects(() => parent.deleteDocument(copied.id), /Only coaches/);
+});
+
+test("Docs rejects mismatched and unsupported uploads before Storage", async () => {
+  const modelState = state();
+  const model = { state: modelState, saveDocument: async value => value, deleteDocument: async () => {} };
+  const media = { upload: async () => { throw new Error("Storage should not be reached."); }, delete: async () => {} };
+  const coach = new AppViewModel(model, { user: { uid: "coach" }, membership: { role: "headCoach" } }, { media, teamId: "team-a" });
+  await assert.rejects(() => coach.uploadDocument({ title: "Not a photo", category: "photo", file: { name: "guide.pdf", type: "application/pdf", size: 100 } }), /Photo category/);
+  await assert.rejects(() => coach.uploadDocument({ title: "Animation", category: "map", file: { name: "map.gif", type: "image/gif", size: 100 } }), /Docs accepts/);
+  await assert.rejects(() => coach.uploadDocument({ title: "Empty", category: "pdf", file: { name: "empty.pdf", type: "application/pdf", size: 0 } }), /empty/);
 });
 
 test("a coach can create a team-wide broadcast", async () => {

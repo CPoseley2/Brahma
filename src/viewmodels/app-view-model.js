@@ -26,8 +26,8 @@ export class AppViewModel extends EventTarget {
   get defaultRoute() { return this.role === "coach" ? "coach-dashboard" : "family-home"; }
   get navigation() {
     return this.role === "coach"
-      ? [["coach-dashboard", "Dashboard"], ["messages", "Messages"], ["development", "Player Development"], ["sessions", "Practices"], ["playbook", "Season Plan"], ["drills", "Drill Cards"], ["roster", "Roster"], ["schedule", "Schedule"], ["volunteers", "Volunteers"], ["standards", "Standards"], ["data-settings", "Data"]]
-      : [["family-home", "Season Home"], ["messages", "Messages"], ["my-player", "Season Story"], ["schedule", "Schedule"], ["volunteers", "Help Out"], ["team-philosophy", "Our Philosophy"]];
+      ? [["coach-dashboard", "Dashboard"], ["messages", "Messages"], ["documents", "Docs"], ["development", "Player Development"], ["sessions", "Practices"], ["playbook", "Season Plan"], ["drills", "Drill Cards"], ["roster", "Roster"], ["schedule", "Schedule"], ["volunteers", "Volunteers"], ["standards", "Standards"], ["data-settings", "Data"]]
+      : [["family-home", "Season Home"], ["messages", "Messages"], ["documents", "Docs"], ["my-player", "Season Story"], ["schedule", "Schedule"], ["volunteers", "Help Out"], ["team-philosophy", "Our Philosophy"]];
   }
   get activePlayers() {
     const active = this.state.players.filter(player => player.active);
@@ -43,6 +43,8 @@ export class AppViewModel extends EventTarget {
     return drillLibrary.map(item => ({ ...item, ...(overrides.get(item.id) || {}) }));
   }
   get canUploadDrillImages() { return Boolean(this.media && this.teamId); }
+  get canManageDocuments() { return this.role === "coach" && Boolean(this.model.saveDocument && this.model.deleteDocument); }
+  get canUploadDocuments() { return this.canManageDocuments && Boolean(this.media && this.teamId); }
   lessonForPractice(eventId) { const index = this.curriculumPracticeEvents.findIndex(event => event.id === eventId); return index >= 0 ? seasonPlan[index] || null : null; }
   practiceSpotlight(referenceDate = todayIso()) {
     const eligible = this.curriculumPracticeEvents;
@@ -410,6 +412,91 @@ export class AppViewModel extends EventTarget {
     const [image] = await this.media.upload([file], `coachTeams/${this.teamId}/drill-cards`, drillId);
     const value = { id: drillId, imageUrl: image.url, imagePath: image.path, fileName: image.fileName, updatedAt: new Date().toISOString(), updatedByUid: this.userId };
     await this.model.saveDrillCard(value); this.upsertLocal("drillCards", value); this.changed(); return value;
+  }
+  async uploadDocument({ title, category, file }) {
+    if (this.role !== "coach") throw new Error("Only coaches can add files to Docs.");
+    if (!this.canUploadDocuments) throw new Error("Document storage is not available.");
+    const cleanTitle = this.#validateDocumentDetails(title, category);
+    this.#validateDocumentFile(file, category);
+    const id = uid("document");
+    const [uploaded] = await this.media.upload([file], `teams/${this.teamId}/documents`, id);
+    const timestamp = new Date().toISOString();
+    const value = {
+      id, title: cleanTitle, category, fileName: uploaded.fileName, url: uploaded.url, path: uploaded.path,
+      contentType: uploaded.contentType, size: uploaded.size, uploadedAt: timestamp, uploadedByUid: this.userId,
+      updatedAt: timestamp, updatedByUid: this.userId,
+    };
+    try { await this.model.saveDocument(value); }
+    catch (error) { await this.media.delete(uploaded.path).catch(() => {}); throw error; }
+    this.upsertLocal("documents", value); this.changed(); return value;
+  }
+  async updateDocument(id, { title, category }) {
+    if (!this.canManageDocuments) throw new Error("Only coaches can edit Docs.");
+    const existing = (this.state.documents || []).find(item => item.id === id);
+    if (!existing) throw new Error("That document could not be found.");
+    const value = {
+      ...existing,
+      title: this.#validateDocumentDetails(title, category),
+      category,
+      updatedAt: new Date().toISOString(),
+      updatedByUid: this.userId,
+    };
+    await this.model.saveDocument(value); this.upsertLocal("documents", value); this.changed(); return value;
+  }
+  async copyDocument(id) {
+    if (!this.canUploadDocuments) throw new Error("Only coaches can copy files in Docs.");
+    const source = (this.state.documents || []).find(item => item.id === id);
+    if (!source) throw new Error("That document could not be found.");
+    const copyId = uid("document");
+    const uploaded = await this.media.copy({
+      sourcePath: source.path,
+      directory: `teams/${this.teamId}/documents`,
+      ownerId: copyId,
+      fileName: source.fileName,
+      contentType: source.contentType,
+    });
+    const timestamp = new Date().toISOString();
+    const suffix = " copy"; const available = Math.max(1, 120 - suffix.length);
+    const value = {
+      id: copyId, title: `${source.title.slice(0, available)}${suffix}`, category: source.category,
+      fileName: uploaded.fileName, url: uploaded.url, path: uploaded.path, contentType: uploaded.contentType,
+      size: uploaded.size, uploadedAt: timestamp, uploadedByUid: this.userId,
+      updatedAt: timestamp, updatedByUid: this.userId, copiedFromId: source.id,
+    };
+    try { await this.model.saveDocument(value); }
+    catch (error) { await this.media.delete(uploaded.path).catch(() => {}); throw error; }
+    this.upsertLocal("documents", value); this.changed(); return value;
+  }
+  async deleteDocument(id) {
+    if (!this.canManageDocuments) throw new Error("Only coaches can delete files from Docs.");
+    const existing = (this.state.documents || []).find(item => item.id === id);
+    if (!existing) throw new Error("That document could not be found.");
+    await this.model.deleteDocument(id);
+    this.state.documents = (this.state.documents || []).filter(item => item.id !== id);
+    let cleanupFailed = false;
+    if (existing.path && this.media) {
+      try { await this.media.delete(existing.path); }
+      catch (error) { cleanupFailed = true; console.warn("Document metadata was deleted, but Storage cleanup failed", error); }
+    }
+    this.changed();
+    return { title: existing.title, cleanupFailed };
+  }
+  #validateDocumentDetails(title, category) {
+    const cleanTitle = String(title || "").trim();
+    if (!cleanTitle) throw new Error("Add a title for this file.");
+    if (cleanTitle.length > 120) throw new Error("Keep the document title to 120 characters or fewer.");
+    if (!["pdf", "map", "photo"].includes(category)) throw new Error("Choose PDF, Map, or Photo.");
+    return cleanTitle;
+  }
+  #validateDocumentFile(file, category) {
+    if (!file) throw new Error("Choose a PDF or image to upload.");
+    const supportedTypes = ["application/pdf", "image/jpeg", "image/png", "image/webp"];
+    const isPdf = file.type === "application/pdf"; const isImage = supportedTypes.slice(1).includes(file.type);
+    if (category === "pdf" && !isPdf) throw new Error("The PDF category accepts PDF files only.");
+    if (category === "photo" && !isImage) throw new Error("The Photo category accepts image files only.");
+    if (!supportedTypes.includes(file.type)) throw new Error("Docs accepts PDF, JPEG, PNG, and WebP files.");
+    if (!Number(file.size)) throw new Error("The selected file is empty.");
+    if (file.size >= 10 * 1024 * 1024) throw new Error("Keep each Docs file under 10 MB.");
   }
   async sendTeamBroadcast(title, body) {
     if (this.role !== "coach") throw new Error("Only a coach can send a team announcement.");

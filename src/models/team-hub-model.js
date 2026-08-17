@@ -19,7 +19,7 @@ export class TeamHubModel {
       volunteerSlots: value.volunteerSlots || [], sessions: value.sessions || [],
       observations: value.observations || [], rsvps: value.rsvps || [],
       broadcasts: value.broadcasts || [], messages: value.messages || [],
-      guardians: value.guardians || [], members: value.members || [], invites: value.invites || [], drillCards: value.drillCards || [],
+      guardians: value.guardians || [], members: value.members || [], invites: value.invites || [], drillCards: value.drillCards || [], documents: value.documents || [],
       skillFramework: value.skillFramework || this.seed.skillFramework,
     };
     if (normalized.team.name === "Fair Oaks Soccer U6") normalized.team.name = "Fair Oaks Soccer Club U6";

@@ -20,4 +20,13 @@ export class MediaService {
       return { ...uploaded, fileName: file.name };
     }));
   }
+  async copy({ sourcePath, directory, ownerId, fileName, contentType }) {
+    if (!sourcePath) throw new Error("The source file is unavailable.");
+    if (!this.allowedTypes.includes(contentType)) throw new Error("The source file type is not supported.");
+    const safeName = String(fileName || "copy").replace(/[^a-zA-Z0-9._-]/g, "_");
+    const path = `${directory}/${ownerId}/${crypto.randomUUID()}_${safeName}`;
+    const copied = await this.storageManager.copy(sourcePath, path, contentType);
+    return { ...copied, fileName };
+  }
+  delete(path) { return this.storageManager.delete(path); }
 }

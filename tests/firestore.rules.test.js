@@ -2,7 +2,7 @@ import { after, before, beforeEach, describe, test } from "node:test";
 import assert from "node:assert/strict";
 import { readFile } from "node:fs/promises";
 import { initializeTestEnvironment, assertFails, assertSucceeds } from "@firebase/rules-unit-testing";
-import { collection, doc, getDoc, getDocs, query, setDoc, updateDoc, where, writeBatch } from "firebase/firestore";
+import { collection, deleteDoc, doc, getDoc, getDocs, query, setDoc, updateDoc, where, writeBatch } from "firebase/firestore";
 
 const projectId = "fair-oaks-u6-team-hub-test";
 const teamId = "fair-oaks-u6";
@@ -42,6 +42,11 @@ async function seed() {
     await setDoc(doc(db, path("messages/message-one")), { guardianId: "relationship-one", playerId: "player-a", body: "Private one", senderUid: "guardian-one", senderRole: "guardian", senderLabel: "Guardian One", createdAt: "2026-07-22T12:00:00.000Z" });
     await setDoc(doc(db, path("messages/message-two")), { guardianId: "relationship-two", playerId: "player-a", body: "Private two", senderUid: "guardian-two", senderRole: "guardian", senderLabel: "Guardian Two", createdAt: "2026-07-22T12:00:00.000Z" });
     await setDoc(doc(db, path("drillCards/gates-galore")), { imageUrl: "https://example.com/gates.png", imagePath: "teams/test/gates.png", fileName: "gates.png" });
+    await setDoc(doc(db, path("documents/field-map")), {
+      title: "Field map", category: "map", fileName: "map.png", url: "https://example.com/map.png",
+      path: `teams/${teamId}/documents/field-map/map.png`, contentType: "image/png", size: 1200,
+      uploadedAt: "2026-08-16T12:00:00.000Z", uploadedByUid: "coach", updatedAt: "2026-08-16T12:00:00.000Z", updatedByUid: "coach",
+    });
     await setDoc(doc(db, path("invites/new@example.com")), { role: "guardian", familyId: "family-a", playerIds: [], guardianIds: [], active: true });
   });
 }
@@ -105,6 +110,11 @@ describe("team privacy", () => {
   test("drill-card artwork is a coach-only coaching tool", async () => {
     await assertSucceeds(getDoc(doc(auth("coach", "coach@example.com"), path("drillCards/gates-galore"))));
     await assertFails(getDoc(doc(auth("guardian-a", "a@example.com"), path("drillCards/gates-galore"))));
+  });
+  test("team documents are readable by coaches and parents", async () => {
+    await assertSucceeds(getDoc(doc(auth("coach", "coach@example.com"), path("documents/field-map"))));
+    await assertSucceeds(getDoc(doc(auth("guardian-a", "a@example.com"), path("documents/field-map"))));
+    await assertSucceeds(getDocs(collection(auth("legacy-parent", "legacy@example.com"), path("documents"))));
   });
   test("guardians can query only their family conversation", async () => {
     const db = auth("guardian-a", "a@example.com");
@@ -276,5 +286,28 @@ describe("authorized writes", () => {
     const data = { imageUrl: "https://example.com/new.png", imagePath: "teams/test/new.png", fileName: "new.png", updatedAt: "2026-07-22T13:00:00.000Z", updatedByUid: "assistant" };
     await assertSucceeds(setDoc(doc(auth("assistant", "assistant@example.com"), path("drillCards/new-drill")), data));
     await assertFails(setDoc(doc(auth("guardian-a", "a@example.com"), path("drillCards/blocked")), data));
+  });
+  test("coaches have document CRUD but cannot replace immutable file metadata", async () => {
+    const db = auth("assistant", "assistant@example.com");
+    const data = {
+      title: "Game day PDF", category: "pdf", fileName: "game-day.pdf", url: "https://example.com/game-day.pdf",
+      path: `teams/${teamId}/documents/game-day/game-day.pdf`, contentType: "application/pdf", size: 2400,
+      uploadedAt: "2026-08-16T13:00:00.000Z", uploadedByUid: "assistant", updatedAt: "2026-08-16T13:00:00.000Z", updatedByUid: "assistant",
+    };
+    await assertSucceeds(setDoc(doc(db, path("documents/game-day")), data));
+    await assertSucceeds(updateDoc(doc(db, path("documents/game-day")), { title: "Updated game day", category: "map", updatedAt: "2026-08-16T13:05:00.000Z", updatedByUid: "assistant" }));
+    await assertFails(updateDoc(doc(db, path("documents/game-day")), { path: `teams/${teamId}/documents/other/file.pdf`, updatedAt: "2026-08-16T13:06:00.000Z", updatedByUid: "assistant" }));
+    await assertSucceeds(deleteDoc(doc(db, path("documents/game-day"))));
+  });
+  test("parents cannot create, edit, or delete team documents", async () => {
+    const db = auth("guardian-a", "a@example.com");
+    const data = {
+      title: "Blocked", category: "pdf", fileName: "blocked.pdf", url: "https://example.com/blocked.pdf",
+      path: `teams/${teamId}/documents/blocked/blocked.pdf`, contentType: "application/pdf", size: 100,
+      uploadedAt: "2026-08-16T13:00:00.000Z", uploadedByUid: "guardian-a", updatedAt: "2026-08-16T13:00:00.000Z", updatedByUid: "guardian-a",
+    };
+    await assertFails(setDoc(doc(db, path("documents/blocked")), data));
+    await assertFails(updateDoc(doc(db, path("documents/field-map")), { title: "Blocked edit", updatedAt: "2026-08-16T13:05:00.000Z", updatedByUid: "guardian-a" }));
+    await assertFails(deleteDoc(doc(db, path("documents/field-map"))));
   });
 });

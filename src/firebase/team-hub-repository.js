@@ -58,7 +58,7 @@ export class TeamHubRepository {
     const messageRequest = isCoach ? this.firestore.fetchAll(teamModels.message, this.context) : this.#loadGuardianMessages(membership);
     const memberRequest = isCoach ? this.firestore.fetchAll(teamModels.member, this.context) : Promise.resolve([]);
     const inviteRequest = isCoach ? this.firestore.fetchAll(teamModels.invite, this.context) : Promise.resolve([]);
-    const [team, families, guardians, members, invites, players, games, sessions, volunteerSlots, broadcasts, messages, drillCards] = await Promise.all([
+    const [team, families, guardians, members, invites, players, games, sessions, volunteerSlots, broadcasts, messages, drillCards, documents] = await Promise.all([
       this.firestore.fetch(teamModels.team, this.teamId),
       familyRequest, guardianRequest, memberRequest, inviteRequest, playerRequest,
       this.firestore.fetchAll(teamModels.event, this.context),
@@ -67,6 +67,7 @@ export class TeamHubRepository {
       this.firestore.fetchAll(teamModels.broadcast, this.context),
       messageRequest,
       isCoach ? this.firestore.fetchAll(teamModels.drillCard, this.context) : Promise.resolve([]),
+      this.firestore.fetchAll(teamModels.document, this.context),
     ]);
     if (!team) throw new Error(`Team ${this.teamId} was not found.`);
     const observations = (await Promise.all(players.map(async player => {
@@ -85,7 +86,7 @@ export class TeamHubRepository {
     const eventSlots = (await Promise.all(games.map(async event => (
       await this.firestore.fetchAll(teamModels.eventSlot, { ...this.context, eventId: event.id })
     ).map(slot => ({ ...slot, eventId: event.id }))))).flat();
-    return { version: 7, team, families, guardians, members, invites, players, games, eventSlots, sessions, volunteerSlots, observations, rsvps, broadcasts, messages, drillCards, skillFramework: team.skillFramework || [] };
+    return { version: 8, team, families, guardians, members, invites, players, games, eventSlots, sessions, volunteerSlots, observations, rsvps, broadcasts, messages, drillCards, documents, skillFramework: team.skillFramework || [] };
   }
   async #loadGuardianPlayers(membership) {
     const values = [];
@@ -102,6 +103,8 @@ export class TeamHubRepository {
   saveBroadcast(value) { return this.broadcasts.log({ ...value, teamId: this.teamId }); }
   saveMessage(value) { return this.messages.send({ ...value, teamId: this.teamId }); }
   saveDrillCard(value) { return this.firestore.upsert(teamModels.drillCard, value, this.context); }
+  saveDocument(value) { return this.firestore.upsert(teamModels.document, value, this.context); }
+  deleteDocument(id) { return this.firestore.delete(teamModels.document, id, this.context); }
   subscribeBroadcasts(onValue, onError) { return this.firestore.subscribe(teamModels.broadcast, [], this.context, onValue, onError); }
   subscribeMessages(membership, onValue, onError) {
     if (isCoachMembership(membership)) return this.firestore.subscribe(teamModels.message, [], this.context, onValue, onError);
