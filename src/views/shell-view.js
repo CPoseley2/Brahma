@@ -6,6 +6,7 @@ import { messageTemplate } from "./templates/message-template.js";
 import { accountTemplate } from "./templates/account-template.js";
 import { playbookTemplate } from "./templates/playbook-template.js";
 import { fieldModeTemplate } from "./templates/field-mode-template.js";
+import { documentsTemplate } from "./templates/documents-template.js";
 
 export class ShellView {
   constructor(root, viewModel, childViews, authManager = null, modeController = null) {
@@ -17,7 +18,7 @@ export class ShellView {
   }
 
   mount() {
-    this.root.innerHTML = `<div class="app-shell"><header class="topbar"><div class="topbar-inner"><div><p class="eyebrow">Fair Oaks Soccer Club</p><h1 id="teamTitle"></h1><p id="viewSubtitle" class="subtitle"></p></div><div class="view-controls"><label class="workspace-mode-control hidden"><span>Workspace</span><select id="workspaceModeSelect" aria-label="Switch workspace"></select></label><span class="signed-in-user"></span><button class="button" data-action="open-account">Account</button><button class="button" data-action="sign-out">Sign out</button></div></div><nav id="mainNav" aria-label="Team hub sections"></nav></header><main>${coachTemplate}${playbookTemplate}${messageTemplate}${sharedTemplate}${familyTemplate}</main><footer>Fair Oaks Soccer Club U6 Team Hub · Private team workspace</footer></div>${dialogTemplate}${accountTemplate}${fieldModeTemplate}`;
+    this.root.innerHTML = `<div class="app-shell"><header class="topbar"><div class="topbar-inner"><div><p class="eyebrow">Fair Oaks Soccer Club</p><h1 id="teamTitle"></h1><p id="viewSubtitle" class="subtitle"></p></div><div class="view-controls"><label class="workspace-mode-control hidden"><span>Workspace</span><select id="workspaceModeSelect" aria-label="Switch workspace"></select></label><span class="signed-in-user"></span><button class="button" data-action="open-account">Account</button><button class="button" data-action="sign-out">Sign out</button></div></div><nav id="mainNav" aria-label="Team hub sections"></nav></header><main>${coachTemplate}${playbookTemplate}${messageTemplate}${documentsTemplate}${sharedTemplate}${familyTemplate}</main><footer>Fair Oaks Soccer Club U6 Team Hub · Private team workspace</footer></div>${dialogTemplate}${accountTemplate}${fieldModeTemplate}`;
     this.root.addEventListener("click", event => this.#onClick(event));
     this.root.querySelector("#workspaceModeSelect").addEventListener("change", event => this.modeController?.change(event.target.value));
     this.vm.addEventListener("change", () => this.render());

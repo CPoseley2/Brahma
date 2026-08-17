@@ -102,6 +102,24 @@ service cloud.firestore {
         && getAfter(/databases/$(database)/documents/teams/$(teamId)/guardians/$(request.resource.data.lastClaimedGuardianId)).data.active == true
         && getAfter(/databases/$(database)/documents/teams/$(teamId)/guardians/$(request.resource.data.lastClaimedGuardianId)).data.playerId == request.resource.data.lastClaimedPlayerId;
     }
+    function validDocumentData(teamId) {
+      return request.resource.data.keys().hasOnly(['title', 'category', 'fileName', 'url', 'path', 'contentType', 'size', 'uploadedAt', 'uploadedByUid', 'updatedAt', 'updatedByUid', 'copiedFromId'])
+        && validText(request.resource.data.title, 120)
+        && request.resource.data.category in ['pdf', 'map', 'photo']
+        && validText(request.resource.data.fileName, 254)
+        && validText(request.resource.data.url, 2000)
+        && validText(request.resource.data.path, 500)
+        && request.resource.data.path.matches('teams/' + teamId + '/documents/.*')
+        && request.resource.data.contentType in ['application/pdf', 'image/jpeg', 'image/png', 'image/webp']
+        && request.resource.data.size is number
+        && request.resource.data.size > 0
+        && request.resource.data.size < 10 * 1024 * 1024
+        && request.resource.data.uploadedAt is string
+        && validText(request.resource.data.uploadedByUid, 200)
+        && request.resource.data.updatedAt is string
+        && validText(request.resource.data.updatedByUid, 200)
+        && (request.resource.data.get('copiedFromId', null) == null || validText(request.resource.data.copiedFromId, 200));
+    }
 
     match /teams/{teamId} {
       allow read: if isMember(teamId);
@@ -250,6 +268,19 @@ service cloud.firestore {
 
       match /drillCards/{drillId} {
         allow read, write: if isCoach(teamId);
+      }
+
+      match /documents/{documentId} {
+        allow read: if isMember(teamId);
+        allow create: if isCoach(teamId)
+          && validDocumentData(teamId)
+          && request.resource.data.uploadedByUid == request.auth.uid
+          && request.resource.data.updatedByUid == request.auth.uid;
+        allow update: if isCoach(teamId)
+          && validDocumentData(teamId)
+          && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['title', 'category', 'updatedAt', 'updatedByUid'])
+          && request.resource.data.updatedByUid == request.auth.uid;
+        allow delete: if isCoach(teamId);
       }
 
       match /volunteerSlots/{slotId} {

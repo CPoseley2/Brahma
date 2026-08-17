@@ -23,6 +23,7 @@ export const teamModels = {
   broadcast: defineFirestoreModel({ collectionPath: ({ teamId }) => `teams/${teamId}/broadcasts` }),
   message: defineFirestoreModel({ collectionPath: ({ teamId }) => `teams/${teamId}/messages` }),
   drillCard: defineFirestoreModel({ collectionPath: ({ teamId }) => `teams/${teamId}/drillCards` }),
+  document: defineFirestoreModel({ collectionPath: ({ teamId }) => `teams/${teamId}/documents` }),
   sharedObservation: defineFirestoreModel({ collectionPath: ({ teamId, playerId }) => `teams/${teamId}/players/${playerId}/sharedObservations` }),
   privateObservation: defineFirestoreModel({ collectionPath: ({ teamId, playerId }) => `teams/${teamId}/players/${playerId}/privateObservations` }),
   rsvp: defineFirestoreModel({ collectionPath: ({ teamId, eventId }) => `teams/${teamId}/events/${eventId}/rsvps` }),

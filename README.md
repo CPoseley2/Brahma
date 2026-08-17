@@ -170,6 +170,17 @@ The Messages area has two intentionally separate channels:
 
 There is no parent-to-parent recipient picker or data path. Firestore rules enforce the same boundary independently of the interface. Messages update live while the app is open.
 
+## Team Docs
+
+Both workspaces include a **Docs** tab for team PDFs, maps, and photos. Active parents and coaches can search, filter, open, and copy links to team files. Any coach can also:
+
+- Upload PDF, JPEG, PNG, or WebP files smaller than 10 MB.
+- Edit a file's display title and category.
+- Duplicate both the stored file and its Firestore metadata.
+- Delete the shared metadata and its underlying Storage object after confirmation.
+
+Document metadata is stored at `teams/{teamId}/documents/{documentId}` and file content is stored beneath `teams/{teamId}/documents/{documentId}/`. Firestore and Storage rules make the library read-only for active parents, writable by any active coach, and inaccessible to non-members. Set `VITE_FIREBASE_STORAGE_ENABLED=true` only in environments whose Firebase Storage bucket and rules are configured.
+
 The first team document and head-coach invite can be recreated by an authorized Firebase operator with:
 
 ```bash
@@ -184,10 +195,10 @@ The bootstrap script reads the ignored private seed only for the team name, phil
 PATH="/opt/homebrew/opt/openjdk/bin:$PATH" npm run test:rules
 npm test
 npm run build
-firebase deploy --only firestore,hosting
+firebase deploy --only firestore,storage,hosting
 ```
 
-The rules tests run against the Firebase emulator and cover anonymous denial, family isolation, private observations, atomic RSVP slot claims/releases, volunteer claims, coach access, and invite-controlled membership creation.
+The rules tests run against the Firebase emulators and cover anonymous denial, family isolation, private observations, atomic RSVP slot claims/releases, volunteer claims, coach access, invite-controlled membership creation, and coach/parent document permissions across both Firestore and Storage.
 
 ## Privacy
 

@@ -15,6 +15,7 @@ import { AccountView } from "./views/account-view.js";
 import { SeasonPlaybookView } from "./views/season-playbook-view.js";
 import { FieldModeViewModel } from "./viewmodels/field-mode-view-model.js";
 import { FieldModeView } from "./views/field-mode-view.js";
+import { DocumentsView } from "./views/documents-view.js";
 
 const root = document.querySelector("#app");
 const services = createFirebaseServices();
@@ -63,7 +64,7 @@ async function renderSession(snapshot = services.auth.snapshot) {
     const dialogs = new DialogView(root, viewModel);
     const eventDialog = new EventDialogView(root, viewModel);
     const fieldMode = new FieldModeView(root, viewModel, new FieldModeViewModel());
-    const views = [new CoachView(root, viewModel, dialogs, fieldMode), new SeasonPlaybookView(root, viewModel), new MessageView(root, viewModel), new SharedView(root, viewModel, dialogs, eventDialog), new FamilyView(root, viewModel), new RosterImportView(root, viewModel), new AccountView(root, services.auth), fieldMode, dialogs, eventDialog];
+    const views = [new CoachView(root, viewModel, dialogs, fieldMode), new SeasonPlaybookView(root, viewModel), new MessageView(root, viewModel), new DocumentsView(root, viewModel), new SharedView(root, viewModel, dialogs, eventDialog), new FamilyView(root, viewModel), new RosterImportView(root, viewModel), new AccountView(root, services.auth), fieldMode, dialogs, eventDialog];
     new ShellView(root, viewModel, views, services.auth, workspace ? workspaceController(workspace) : null).mount();
   } catch (error) {
     root.innerHTML = `<main class="login-shell"><section class="login-card"><p class="eyebrow dark">Fair Oaks Soccer Club</p><h1>Could not load the team</h1><p class="login-intro"></p><p class="login-message error"></p><div class="button-row"><button class="button primary" data-action="retry-team">Try loading again</button><button class="button" data-action="sign-out">Sign out</button></div></section></main>`;

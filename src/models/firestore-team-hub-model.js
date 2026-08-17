@@ -52,6 +52,11 @@ export class FirestoreTeamHubModel {
     return saved;
   }
   async saveDrillCard(value) { await this.repository.saveDrillCard(value); this.#merge("drillCards", value); return value; }
+  async saveDocument(value) { await this.repository.saveDocument(value); this.#merge("documents", value); return value; }
+  async deleteDocument(id) {
+    await this.repository.deleteDocument(id);
+    this.state.documents = (this.state.documents || []).filter(item => item.id !== id);
+  }
   startMessaging(onChange, onError) {
     const stops = [
       this.repository.subscribeBroadcasts(values => { this.state.broadcasts = values; onChange(); }, onError),
