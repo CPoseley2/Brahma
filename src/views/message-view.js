@@ -1,17 +1,27 @@
 import { escapeHtml, formatDateTime } from "../shared/format.js";
 
 const empty = message => `<div class="empty-state">${escapeHtml(message)}</div>`;
+const messageBody = body => String(body || "").split(/(https?:\/\/[^\s<]+)/g)
+  .map(part => /^https?:\/\//.test(part) ? `<a href="${escapeHtml(part)}" target="_blank" rel="noopener noreferrer">${escapeHtml(part)}</a>` : escapeHtml(part))
+  .join("");
 
 export class MessageView {
   constructor(root, vm) {
     this.root = root; this.vm = vm; this.feedback = ""; this.error = "";
     this.conversationId = vm.privateConversations[0]?.id || "";
+    this.filter = "all"; this.search = "";
   }
 
   mount() {
     this.root.querySelector("#broadcastForm").addEventListener("submit", event => this.#sendBroadcast(event));
     this.root.querySelector("#privateMessageForm").addEventListener("submit", event => this.#sendMessage(event));
+    this.root.querySelector("#generateBroadcastDraft").addEventListener("click", () => this.#generateBroadcastDraft());
+    this.root.querySelector("#messageConversationSearch").addEventListener("input", event => { this.search = event.target.value; this.#renderConversations(); });
     this.root.addEventListener("click", event => {
+      const filter = event.target.closest("[data-message-filter]");
+      if (filter) { this.filter = filter.dataset.messageFilter; this.#renderConversations(); return; }
+      const quickReply = event.target.closest("[data-quick-reply]");
+      if (quickReply) { const field = this.root.querySelector("#privateMessageBody"); field.value = quickReply.dataset.quickReply; field.focus(); return; }
       const button = event.target.closest("[data-message-conversation]");
       if (!button) return;
       this.conversationId = button.dataset.messageConversation; this.feedback = ""; this.error = ""; this.render();
@@ -30,6 +40,14 @@ export class MessageView {
     event.preventDefault();
     const body = this.root.querySelector("#privateMessageBody").value;
     await this.#submit(event.submitter, () => this.vm.sendPrivateMessage(this.conversationId, body), () => event.target.reset());
+  }
+  #generateBroadcastDraft() {
+    const prompt = this.root.querySelector("#broadcastPrompt").value.trim(); const intent = this.root.querySelector("#broadcastIntent").value; const tone = this.root.querySelector("#broadcastTone").value;
+    if (!prompt) { this.error = "Add the key detail first, then I can shape a draft."; this.render(); return; }
+    const drafts = { update: ["Team update", "Here’s a quick update for the team:"], reminder: ["Friendly reminder", "A quick reminder for our team:"], schedule: ["Schedule update", "Please note this schedule update:"], celebration: ["A team celebration", "A bright spot from our team:"] };
+    const closings = { warm: "Thank you for helping us keep the season running smoothly!", direct: "Please plan accordingly.", encouraging: "We appreciate your flexibility and team spirit!" };
+    this.root.querySelector("#broadcastTitle").value = drafts[intent][0]; this.root.querySelector("#broadcastBody").value = `${drafts[intent][1]}\n\n${prompt}\n\n${closings[tone]}`;
+    this.feedback = "Smart draft ready—review and personalize it before sending."; this.error = ""; this.render();
   }
 
   async #submit(button, operation, onSuccess) {
@@ -63,11 +81,14 @@ export class MessageView {
 
   #renderConversations() {
     const messages = this.vm.state.messages || [];
-    this.root.querySelector("#familyThreadList").innerHTML = this.vm.privateConversations.map(conversation => {
+    const now = Date.now(); const visible = this.vm.privateConversations.filter(conversation => { const items = messages.filter(item => this.#belongsTo(item, conversation)).sort((a, b) => b.createdAt.localeCompare(a.createdAt)); const latest = items[0]; const text = `${conversation.label} ${conversation.detail} ${latest?.body || ""}`.toLowerCase(); return text.includes(this.search.trim().toLowerCase()) && (this.filter === "all" || (this.filter === "unanswered" && latest?.senderRole === "guardian") || (this.filter === "recent" && latest && now - new Date(latest.createdAt).getTime() < 7 * 86400000)); });
+    this.root.querySelector("#inboxVisibleCount").textContent = `${visible.length} shown`;
+    this.root.querySelectorAll("[data-message-filter]").forEach(button => button.classList.toggle("active", button.dataset.messageFilter === this.filter));
+    this.root.querySelector("#familyThreadList").innerHTML = visible.map(conversation => {
       const items = messages.filter(item => this.#belongsTo(item, conversation)).sort((a, b) => b.createdAt.localeCompare(a.createdAt));
       const latest = items[0];
-      return `<button class="family-thread-button ${conversation.id === this.conversationId ? "active" : ""}" data-message-conversation="${escapeHtml(conversation.id)}"><strong>${escapeHtml(conversation.label)}</strong><span>${latest ? escapeHtml(latest.body.slice(0, 72)) : escapeHtml(conversation.detail)}</span><small>${items.length} message${items.length === 1 ? "" : "s"}</small></button>`;
-    }).join("") || empty("No private guardian conversations are available.");
+      return `<button class="family-thread-button ${conversation.id === this.conversationId ? "active" : ""}" data-message-conversation="${escapeHtml(conversation.id)}"><strong>${escapeHtml(conversation.label)} ${latest?.senderRole === "guardian" ? "<em>Needs reply</em>" : ""}</strong><span>${latest ? escapeHtml(latest.body.slice(0, 72)) : escapeHtml(conversation.detail)}</span><small>${latest ? formatDateTime(latest.createdAt) : "No messages yet"}</small></button>`;
+    }).join("") || empty("No conversations match these filters.");
   }
 
   #renderThread() {
@@ -84,8 +105,9 @@ export class MessageView {
     const items = (this.vm.state.messages || []).filter(item => conversation && this.#belongsTo(item, conversation)).sort((a, b) => a.createdAt.localeCompare(b.createdAt));
     this.root.querySelector("#messageThreadList").innerHTML = items.map(item => {
       const fromCoach = item.senderRole === "coach";
-      return `<article class="message-bubble ${fromCoach ? "from-coach" : "from-family"}"><div>${escapeHtml(item.body)}</div><span>${escapeHtml(item.senderLabel || (fromCoach ? "Coach" : label))} · ${formatDateTime(item.createdAt)}</span></article>`;
+      return `<article class="message-bubble ${fromCoach ? "from-coach" : "from-family"}"><div>${messageBody(item.body)}</div><span>${escapeHtml(item.senderLabel || (fromCoach ? "Coach" : label))} · ${formatDateTime(item.createdAt)}</span></article>`;
     }).join("") || empty(coach ? "No private messages with this guardian yet." : "Start a private conversation with the coaching staff.");
+    this.root.querySelector("#quickReplyBar").innerHTML = coach && conversation ? ["Thanks for reaching out—we’ll follow up shortly.", "Absolutely. We’ll make a note of that.", "Thanks for the update. See you at the next session!"].map(reply => `<button type="button" data-quick-reply="${escapeHtml(reply)}">${escapeHtml(reply)}</button>`).join("") : "";
     this.root.querySelector("#privateMessageSubmit").disabled = !conversation;
   }
   #belongsTo(message, conversation) {

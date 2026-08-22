@@ -15,6 +15,8 @@ async function seed() {
   await environment.withSecurityRulesDisabled(async context => {
     const db = context.firestore();
     await setDoc(doc(db, `teams/${teamId}`), { name: "Fair Oaks Soccer Club U6" });
+    await setDoc(doc(db, "clubAdmins/admin"), { email: "admin@example.com", active: true });
+    await setDoc(doc(db, "fields/field-two"), { name: "Field 2", latitude: 38.644123, longitude: -121.271234 });
     await setDoc(doc(db, path("members/coach")), { role: "headCoach", familyId: null, active: true, email: "coach@example.com" });
     await setDoc(doc(db, path("members/assistant")), { role: "assistantCoach", familyId: null, active: true, email: "assistant@example.com" });
     await setDoc(doc(db, path("members/guardian-a")), { role: "guardian", familyId: "family-a", active: true, email: "a@example.com" });
@@ -42,6 +44,7 @@ async function seed() {
     await setDoc(doc(db, path("messages/message-one")), { guardianId: "relationship-one", playerId: "player-a", body: "Private one", senderUid: "guardian-one", senderRole: "guardian", senderLabel: "Guardian One", createdAt: "2026-07-22T12:00:00.000Z" });
     await setDoc(doc(db, path("messages/message-two")), { guardianId: "relationship-two", playerId: "player-a", body: "Private two", senderUid: "guardian-two", senderRole: "guardian", senderLabel: "Guardian Two", createdAt: "2026-07-22T12:00:00.000Z" });
     await setDoc(doc(db, path("drillCards/gates-galore")), { imageUrl: "https://example.com/gates.png", imagePath: "teams/test/gates.png", fileName: "gates.png" });
+    await setDoc(doc(db, path("documents/field-map")), { title: "Field map", category: "map", fileName: "map.png", url: "https://example.com/map.png", path: "teams/fair-oaks-u6/documents/map.png", contentType: "image/png", size: 1200, uploadedAt: "2026-08-13T18:00:00.000Z", uploadedByUid: "coach" });
     await setDoc(doc(db, path("invites/new@example.com")), { role: "guardian", familyId: "family-a", playerIds: [], guardianIds: [], active: true });
   });
 }
@@ -79,6 +82,11 @@ describe("team privacy", () => {
     await assertSucceeds(getDocs(collection(auth("guardian-a", "a@example.com"), path("events/event-1/slots"))));
     await assertSucceeds(getDocs(collection(auth("legacy-parent", "legacy@example.com"), path("events/event-1/slots"))));
   });
+  test("signed-in coaches and parents can read trusted field maps but anonymous visitors cannot", async () => {
+    await assertSucceeds(getDoc(doc(auth("coach", "coach@example.com"), "fields/field-two")));
+    await assertSucceeds(getDoc(doc(auth("guardian-a", "a@example.com"), "fields/field-two")));
+    await assertFails(getDoc(doc(environment.unauthenticatedContext().firestore(), "fields/field-two")));
+  });
   test("a legacy parent can complete every Firestore read used during startup", async () => {
     const db = auth("legacy-parent", "legacy@example.com");
     await assertSucceeds(getDoc(doc(db, `teams/${teamId}`)));
@@ -91,6 +99,7 @@ describe("team privacy", () => {
     await assertSucceeds(getDocs(collection(db, path("players/player-a/sharedObservations"))));
     await assertSucceeds(getDoc(doc(db, path("events/event-1/rsvps/player-a"))));
     await assertSucceeds(getDocs(collection(db, path("events/event-1/slots"))));
+    await assertSucceeds(getDocs(collection(db, "fields")));
   });
   test("guardians can read team broadcasts", async () => assertSucceeds(getDoc(doc(auth("guardian-a", "a@example.com"), path("broadcasts/broadcast-1")))));
   test("members can list team broadcasts", async () => {
@@ -105,6 +114,11 @@ describe("team privacy", () => {
   test("drill-card artwork is a coach-only coaching tool", async () => {
     await assertSucceeds(getDoc(doc(auth("coach", "coach@example.com"), path("drillCards/gates-galore"))));
     await assertFails(getDoc(doc(auth("guardian-a", "a@example.com"), path("drillCards/gates-galore"))));
+  });
+  test("team documents are visible to coaches and families", async () => {
+    await assertSucceeds(getDoc(doc(auth("coach", "coach@example.com"), path("documents/field-map"))));
+    await assertSucceeds(getDoc(doc(auth("guardian-a", "a@example.com"), path("documents/field-map"))));
+    await assertSucceeds(getDocs(collection(auth("legacy-parent", "legacy@example.com"), path("documents"))));
   });
   test("guardians can query only their family conversation", async () => {
     const db = auth("guardian-a", "a@example.com");
@@ -121,6 +135,23 @@ describe("team privacy", () => {
 });
 
 describe("authorized writes", () => {
+  test("club admins can manage cross-team operations but ordinary members cannot", async () => {
+    const adminDb = auth("admin", "admin@example.com");
+    await assertSucceeds(getDocs(collection(adminDb, "teams")));
+    await assertSucceeds(setDoc(doc(adminDb, "fields/new-field"), { name: "New Field", status: "Open" }));
+    await assertSucceeds(setDoc(doc(adminDb, "budgetItems/field-permits"), { name: "Field permits", type: "Expense", planned: 50000 }));
+    await assertSucceeds(setDoc(doc(adminDb, "gearItems/balls"), { name: "Soccer balls", vendor: "Amazon", orderedQty: 200 }));
+    await assertSucceeds(setDoc(doc(adminDb, "gearDistributions/team-a"), { teamId: "team-a", status: "Ready" }));
+    await assertSucceeds(setDoc(doc(adminDb, "coaches/new-coach"), { name: "New Coach", email: "new-coach@example.com", clearanceStatus: "Pending" }));
+    await assertSucceeds(setDoc(doc(adminDb, "scheduleScenarios/rain-plan"), { name: "Rain plan", status: "draft", practices: [] }));
+    await assertSucceeds(setDoc(doc(adminDb, path("players/admin-player")), { firstName: "Admin", familyId: null }));
+    await assertFails(getDocs(collection(auth("guardian-a", "a@example.com"), "teams")));
+    await assertFails(setDoc(doc(auth("coach", "coach@example.com"), "fields/blocked"), { name: "Blocked" }));
+    await assertFails(setDoc(doc(auth("coach", "coach@example.com"), "budgetItems/blocked"), { name: "Blocked", type: "Expense" }));
+    await assertFails(setDoc(doc(auth("coach", "coach@example.com"), "gearItems/blocked"), { name: "Blocked" }));
+    await assertFails(setDoc(doc(auth("coach", "coach@example.com"), "gearDistributions/blocked"), { teamId: "team-a" }));
+    await assertFails(setDoc(doc(auth("coach", "coach@example.com"), "scheduleScenarios/blocked"), { name: "Blocked", status: "draft" }));
+  });
   test("guardians cannot edit events", async () => assertFails(updateDoc(doc(auth("guardian-a", "a@example.com"), path("events/event-1")), { status: "Canceled" })));
   test("members can record only their own last login activity", async () => {
     const db = auth("guardian-one", "one@example.com");
@@ -175,6 +206,40 @@ describe("authorized writes", () => {
     await assertSucceeds(setDoc(doc(auth("coach", "coach@example.com"), path("guardians/new-relationship")), data));
     await assertFails(setDoc(doc(auth("assistant", "assistant@example.com"), path("guardians/blocked-relationship")), data));
   });
+  test("an assistant coach can promote a parent and send onboarding while preserving parent scope", async () => {
+    const db = auth("assistant", "assistant@example.com"); const batch = writeBatch(db);
+    batch.set(doc(db, path("guardians/promotion-parent-a")), {
+      playerId: "player-a", name: "Alpha Parent", email: "a@example.com", relationship: "parent", active: true,
+      createdAt: "2026-08-13T18:00:00.000Z", createdByUid: "assistant",
+    });
+    batch.set(doc(db, path("invites/a@example.com")), {
+      email: "a@example.com", role: "assistantCoach", familyId: "family-a", playerIds: ["player-a"], guardianIds: ["promotion-parent-a"], active: true,
+    });
+    batch.update(doc(db, path("members/guardian-a")), {
+      role: "assistantCoach", familyId: "family-a", playerIds: ["player-a"], guardianIds: ["promotion-parent-a"], active: true,
+    });
+    batch.set(doc(db, path("messages/promotion-message")), {
+      guardianId: "promotion-parent-a", playerId: "player-a", body: "You have been upgraded to a coach. Read /coach-readme.html",
+      senderUid: "assistant", senderRole: "coach", senderLabel: "Coach", createdAt: "2026-08-13T18:00:00.000Z",
+    });
+    await assertSucceeds(batch.commit());
+    const membership = (await getDoc(doc(db, path("members/guardian-a")))).data();
+    assert.equal(membership.role, "assistantCoach");
+    assert.equal(membership.familyId, "family-a");
+    assert.deepEqual(membership.playerIds, ["player-a"]);
+    await assertSucceeds(setDoc(doc(auth("guardian-a", "a@example.com"), path("messages/promoted-parent-message")), {
+      guardianId: "promotion-parent-a", playerId: "player-a", body: "Writing from Parent view.",
+      senderUid: "guardian-a", senderRole: "guardian", senderLabel: "Alpha Parent", createdAt: "2026-08-13T18:05:00.000Z",
+    }));
+  });
+  test("an assistant coach cannot use promotion access to grant head coach", async () => {
+    const db = auth("assistant", "assistant@example.com"); const batch = writeBatch(db);
+    batch.set(doc(db, path("invites/a@example.com")), {
+      email: "a@example.com", role: "headCoach", familyId: "family-a", playerIds: ["player-a"], guardianIds: ["relationship-one"], active: true,
+    });
+    batch.update(doc(db, path("members/guardian-a")), { role: "headCoach" });
+    await assertFails(batch.commit());
+  });
   test("coaches can broadcast to the team but guardians cannot", async () => {
     const data = { title: "Schedule", body: "Practice moved.", familyIds: [], sentByUid: "coach", sentByLabel: "Head Coach", sentAt: "2026-07-22T13:00:00.000Z", attachments: [], actionButton: null };
     await assertSucceeds(setDoc(doc(auth("coach", "coach@example.com"), path("broadcasts/broadcast-2")), data));
@@ -205,5 +270,10 @@ describe("authorized writes", () => {
     const data = { imageUrl: "https://example.com/new.png", imagePath: "teams/test/new.png", fileName: "new.png", updatedAt: "2026-07-22T13:00:00.000Z", updatedByUid: "assistant" };
     await assertSucceeds(setDoc(doc(auth("assistant", "assistant@example.com"), path("drillCards/new-drill")), data));
     await assertFails(setDoc(doc(auth("guardian-a", "a@example.com"), path("drillCards/blocked")), data));
+  });
+  test("coaches can add team documents but guardians cannot", async () => {
+    const data = { title: "Game day PDF", category: "pdf", fileName: "game-day.pdf", url: "https://example.com/game-day.pdf", path: "teams/fair-oaks-u6/documents/game-day.pdf", contentType: "application/pdf", size: 2400, uploadedAt: "2026-08-13T19:00:00.000Z", uploadedByUid: "assistant" };
+    await assertSucceeds(setDoc(doc(auth("assistant", "assistant@example.com"), path("documents/game-day")), data));
+    await assertFails(setDoc(doc(auth("guardian-a", "a@example.com"), path("documents/blocked")), { ...data, uploadedByUid: "guardian-a" }));
   });
 });

@@ -14,8 +14,12 @@ export class DialogView {
       if (action === "edit-guardian") this.openGuardian("", event.target.closest("[data-guardian-id]").dataset.guardianId);
       if (action === "revoke-guardian") this.#revokeGuardian(event.target.closest("[data-guardian-id]").dataset.guardianId);
       if (action === "close-guardian") this.root.querySelector("#guardianDialog").close();
+      if (action === "close-coach-promotion") this.root.querySelector("#coachPromotionDialog").close();
+      if (action === "view-rsvps") this.openRsvpRoster(event.target.closest("[data-id]").dataset.id);
+      if (action === "close-rsvp-roster") this.root.querySelector("#rsvpRosterDialog").close();
     });
     this.root.querySelector("#guardianForm").addEventListener("submit", event => this.#saveGuardian(event));
+    this.root.querySelector("#coachPromotionForm").addEventListener("submit", event => this.#promoteCoach(event));
   }
   render() {
     const playerDialog = this.root.querySelector("#playerDialog");
@@ -68,6 +72,39 @@ export class DialogView {
     form.querySelector("#guardianFormFeedback").innerHTML = "";
     dialog.showModal();
   }
+  openCoachPromotion() {
+    const dialog = this.root.querySelector("#coachPromotionDialog"); const form = dialog.querySelector("form");
+    const candidates = this.vm.coachPromotionCandidates;
+    form.reset();
+    form.elements.candidate.innerHTML = candidates.length
+      ? `<option value="">Choose a roster contact</option>${candidates.map(candidate => `<option value="${escapeHtml(candidate.id)}">${escapeHtml(candidate.name)} — ${escapeHtml(candidate.email)} — ${escapeHtml(candidate.playerName)}</option>`).join("")}`
+      : `<option value="">No eligible parent contacts</option>`;
+    form.elements.candidate.disabled = !candidates.length;
+    form.querySelector("[type=submit]").disabled = !candidates.length;
+    form.querySelector("[type=submit]").textContent = "Review & add coach";
+    form.querySelector("#coachPromotionFeedback").innerHTML = candidates.length ? "" : `<div class="login-message">Add a parent email or guardian relationship to a player before promoting them.</div>`;
+    dialog.showModal();
+  }
+  openRsvpRoster(eventId) {
+    if (this.vm.role !== "coach") return;
+    const event = this.vm.state.games.find(item => item.id === eventId); if (!event) return;
+    const roster = this.vm.eventRsvpRoster(eventId);
+    const dialog = this.root.querySelector("#rsvpRosterDialog");
+    dialog.querySelector("#rsvpRosterTitle").textContent = `${event.type || "Event"} RSVP roster`;
+    dialog.querySelector("#rsvpRosterEvent").textContent = `${formatDate(event.date)} · ${formatTime(event.time)} · ${event.location || "Location TBD"}`;
+    dialog.querySelector("#rsvpRosterSummary").innerHTML = `<strong>${roster.attending} attending</strong><span>${roster.declined} not attending</span><span>${roster.maybe} maybe</span><span>${roster.noResponse} no response</span>`;
+    dialog.querySelector("#rsvpRosterList").innerHTML = roster.players.map(player => {
+      const status = player.rsvpStatus === "yes"
+        ? { icon: "✓", label: "Attending", className: "yes" }
+        : player.rsvpStatus === "no"
+          ? { icon: "×", label: "Not attending", className: "no" }
+          : player.rsvpStatus === "maybe"
+            ? { icon: "?", label: "Maybe", className: "maybe" }
+            : { icon: "?", label: "No response", className: "none" };
+      return `<div class="rsvp-roster-row"><span class="rsvp-status-icon ${status.className}" aria-hidden="true">${status.icon}</span><strong>${escapeHtml(player.firstName)} ${escapeHtml(player.lastName)}</strong><span>${status.label}</span></div>`;
+    }).join("") || `<div class="empty-state">No active players are on the roster.</div>`;
+    dialog.showModal();
+  }
   openVolunteer(id = "") {
     const dialog = this.root.querySelector("#volunteerDialog"); const form = dialog.querySelector("form"); const item = this.vm.state.volunteerSlots.find(value => value.id === id);
     form.querySelector("[data-title]").textContent = item ? "Edit volunteer job" : "Add volunteer job";
@@ -95,9 +132,10 @@ export class DialogView {
     addButton.classList.toggle("hidden", !this.vm.isHeadCoach);
     const player = this.vm.player(playerId);
     const primaryMember = this.vm.memberForEmail(player?.familyEmail);
+    const primaryCoach = this.vm.hasCoachPrivileges(player?.familyEmail) ? `<span class="badge gold guardian-status">Coach</span>` : "";
     const primaryStatus = primaryMember
-      ? `<span class="badge blue guardian-status">Joined</span><small class="muted">${primaryMember.lastLoginAt ? `Last login ${formatDateTime(primaryMember.lastLoginAt)}` : "Last login not recorded yet"}</small>`
-      : player?.familyEmail ? `<span class="badge gold guardian-status">Invited</span><small class="muted">No successful login recorded.</small>` : "";
+      ? `<span class="badge blue guardian-status">Joined</span>${primaryCoach}<small class="muted">${primaryMember.lastLoginAt ? `Last login ${formatDateTime(primaryMember.lastLoginAt)}` : "Last login not recorded yet"}</small>`
+      : player?.familyEmail ? `<span class="badge gold guardian-status">Invited</span>${primaryCoach}<small class="muted">No successful login recorded.</small>` : "";
     section.querySelector("#playerPrimaryContact").innerHTML = player && (player.familyEmail || player.familyPhone)
       ? `<article class="guardian-card primary-contact-card"><div><strong>Primary roster contact</strong>${primaryStatus}<p>${escapeHtml(player.familyEmail || "No email")}${player.familyPhone ? ` · ${escapeHtml(player.familyPhone)}` : ""}</p></div></article>`
       : "";
@@ -110,12 +148,13 @@ export class DialogView {
     list.innerHTML = this.vm.guardiansForPlayer(playerId).map(guardian => {
       const member = this.vm.memberForEmail(guardian.email);
       const joined = Boolean(member);
+      const coach = this.vm.hasCoachPrivileges(guardian.email) ? `<span class="badge gold guardian-status">Coach</span>` : "";
       const relationship = guardian.relationship.replace(/\b\w/g, character => character.toUpperCase());
       const actions = this.vm.isHeadCoach ? `<div class="guardian-card-actions"><button type="button" class="button small" data-action="edit-guardian" data-guardian-id="${escapeHtml(guardian.id)}">Edit</button><button type="button" class="button small danger" data-action="revoke-guardian" data-guardian-id="${escapeHtml(guardian.id)}">Revoke</button></div>` : "";
       const login = joined
         ? `<small class="muted">${member.lastLoginAt ? `Last login ${formatDateTime(member.lastLoginAt)}` : "Last login not recorded yet"}</small>`
         : `<small class="muted">Invitation has not been accepted.</small>`;
-      return `<article class="guardian-card"><div><strong>${escapeHtml(guardian.name)}</strong><span class="badge ${joined ? "blue" : "gold"} guardian-status">${joined ? "Joined" : "Invited"}</span><p>${escapeHtml(relationship)} · <span class="guardian-email">${escapeHtml(guardian.email)}</span></p>${login}</div>${actions}</article>`;
+      return `<article class="guardian-card"><div><strong>${escapeHtml(guardian.name)}</strong><span class="badge ${joined ? "blue" : "gold"} guardian-status">${joined ? "Joined" : "Invited"}</span>${coach}<p>${escapeHtml(relationship)} · <span class="guardian-email">${escapeHtml(guardian.email)}</span></p>${login}</div>${actions}</article>`;
     }).join("") || `<div class="empty-state">No guardians have been invited for this player.</div>`;
   }
   async #saveGuardian(event) {
@@ -132,6 +171,25 @@ export class DialogView {
     } catch (error) {
       feedback.innerHTML = `<div class="login-message error">${escapeHtml(error.message)}</div>`;
     } finally { button.disabled = false; }
+  }
+  async #promoteCoach(event) {
+    event.preventDefault();
+    const form = event.currentTarget; if (!form.reportValidity()) return;
+    const candidate = this.vm.coachPromotionCandidates.find(item => item.id === formValue(form, "candidate"));
+    if (!candidate) return;
+    const confirmed = confirm(`Promote ${candidate.name} (${candidate.email}) to assistant coach?\n\nThey will gain the Coaching Dashboard and keep Parent view access for ${candidate.playerName}. A private onboarding message will be sent automatically.`);
+    if (!confirmed) return;
+    const button = form.querySelector("[type=submit]"); const feedback = form.querySelector("#coachPromotionFeedback");
+    button.disabled = true; feedback.innerHTML = `<div class="login-message">Adding coach access and sending the onboarding message…</div>`;
+    try {
+      const result = await this.vm.promoteParentToCoach(candidate);
+      feedback.innerHTML = `<div class="login-message success">${escapeHtml(result)}</div>`;
+      form.elements.candidate.disabled = true;
+      button.textContent = "Coach added";
+    } catch (error) {
+      feedback.innerHTML = `<div class="login-message error">${escapeHtml(error.message)}</div>`;
+      button.disabled = false;
+    }
   }
   async #revokeGuardian(id) {
     const guardian = this.vm.guardianRelationships.find(item => item.id === id);

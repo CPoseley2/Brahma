@@ -57,15 +57,18 @@ export class TeamHubRepository {
       : Promise.all((membership.guardianIds || []).map(id => this.firestore.fetch(teamModels.guardian, id, this.context))).then(values => values.filter(Boolean));
     const messageRequest = isCoach ? this.firestore.fetchAll(teamModels.message, this.context) : this.#loadGuardianMessages(membership);
     const memberRequest = isCoach ? this.firestore.fetchAll(teamModels.member, this.context) : Promise.resolve([]);
-    const [team, families, guardians, members, players, games, sessions, volunteerSlots, broadcasts, messages, drillCards] = await Promise.all([
+    const inviteRequest = isCoach ? this.firestore.fetchAll(teamModels.invite, this.context) : Promise.resolve([]);
+    const [team, fields, families, guardians, members, invites, players, games, sessions, volunteerSlots, broadcasts, messages, drillCards, documents] = await Promise.all([
       this.firestore.fetch(teamModels.team, this.teamId),
-      familyRequest, guardianRequest, memberRequest, playerRequest,
+      this.firestore.fetchAll(teamModels.field),
+      familyRequest, guardianRequest, memberRequest, inviteRequest, playerRequest,
       this.firestore.fetchAll(teamModels.event, this.context),
       isCoach ? this.firestore.fetchAll(teamModels.session, this.context) : Promise.resolve([]),
       this.firestore.fetchAll(teamModels.volunteerSlot, this.context),
       this.firestore.fetchAll(teamModels.broadcast, this.context),
       messageRequest,
       isCoach ? this.firestore.fetchAll(teamModels.drillCard, this.context) : Promise.resolve([]),
+      this.firestore.fetchAll(teamModels.document, this.context),
     ]);
     if (!team) throw new Error(`Team ${this.teamId} was not found.`);
     const observations = (await Promise.all(players.map(async player => {
@@ -84,7 +87,7 @@ export class TeamHubRepository {
     const eventSlots = (await Promise.all(games.map(async event => (
       await this.firestore.fetchAll(teamModels.eventSlot, { ...this.context, eventId: event.id })
     ).map(slot => ({ ...slot, eventId: event.id }))))).flat();
-    return { version: 7, team, families, guardians, members, players, games, eventSlots, sessions, volunteerSlots, observations, rsvps, broadcasts, messages, drillCards, skillFramework: team.skillFramework || [] };
+    return { version: 9, team, fields, families, guardians, members, invites, players, games, eventSlots, sessions, volunteerSlots, observations, rsvps, broadcasts, messages, drillCards, documents, skillFramework: team.skillFramework || [] };
   }
   async #loadGuardianPlayers(membership) {
     const values = [];
@@ -101,6 +104,7 @@ export class TeamHubRepository {
   saveBroadcast(value) { return this.broadcasts.log({ ...value, teamId: this.teamId }); }
   saveMessage(value) { return this.messages.send({ ...value, teamId: this.teamId }); }
   saveDrillCard(value) { return this.firestore.upsert(teamModels.drillCard, value, this.context); }
+  saveDocument(value) { return this.firestore.upsert(teamModels.document, value, this.context); }
   subscribeBroadcasts(onValue, onError) { return this.firestore.subscribe(teamModels.broadcast, [], this.context, onValue, onError); }
   subscribeMessages(membership, onValue, onError) {
     if (isCoachMembership(membership)) return this.firestore.subscribe(teamModels.message, [], this.context, onValue, onError);
@@ -184,6 +188,64 @@ export class TeamHubRepository {
       merge: true,
     }));
     await this.firestore.saveMultiple(entries);
+  }
+  async promoteParentToCoach(value, currentState) {
+    const email = String(value.email || "").trim().toLowerCase();
+    const name = String(value.name || "").trim();
+    const player = (currentState.players || []).find(item => item.id === value.playerId);
+    if (!player) throw new Error("That player could not be found.");
+    if (!name || !/^\S+@\S+\.\S+$/.test(email)) throw new Error("Choose a parent with a valid name and email address.");
+
+    const existingInvite = await this.firestore.fetch(teamModels.invite, email, this.context);
+    if (["headCoach", "assistantCoach"].includes(existingInvite?.role)) throw new Error(`${email} already has coaching privileges.`);
+    const matchingMembers = await this.firestore.fetchWhere(teamModels.member, [{ field: "email", value: email }], this.context);
+    if (matchingMembers.some(member => ["headCoach", "assistantCoach"].includes(member.role))) throw new Error(`${email} already has coaching privileges.`);
+
+    const existingGuardian = (currentState.guardians || []).find(item => item.active !== false && item.playerId === player.id && item.email?.toLowerCase() === email);
+    const guardian = existingGuardian || {
+      id: await privateId("guardian", `${player.id}:${email}`),
+      playerId: player.id,
+      name,
+      email,
+      relationship: "parent",
+      active: true,
+      createdAt: new Date().toISOString(),
+      createdByUid: value.promotedByUid || null,
+    };
+    const familyId = existingInvite?.familyId
+      ?? matchingMembers.find(member => member.familyId)?.familyId
+      ?? player.familyId
+      ?? null;
+    const playerIds = [...new Set([
+      ...(existingInvite?.playerIds || []),
+      ...matchingMembers.flatMap(member => member.playerIds || []),
+      player.id,
+    ])];
+    const guardianIds = [...new Set([
+      ...(existingInvite?.guardianIds || []),
+      ...matchingMembers.flatMap(member => member.guardianIds || []),
+      guardian.id,
+    ])];
+    const invite = { ...existingInvite, id: email, email, role: "assistantCoach", familyId, playerIds, guardianIds, active: true };
+    const members = matchingMembers.map(member => ({ ...member, role: "assistantCoach", familyId, playerIds, guardianIds, active: true }));
+    const message = {
+      id: value.messageId,
+      guardianId: guardian.id,
+      playerId: player.id,
+      body: `You have been upgraded to a coach. You now have access to the Coaching Dashboard and still have your Parent view. Here is a readme of the Coach Portal: ${value.readmeUrl}`,
+      senderUid: value.promotedByUid,
+      senderRole: "coach",
+      senderLabel: value.promotedByLabel || "Coach",
+      createdAt: new Date().toISOString(),
+    };
+    const entries = [
+      ...(!existingGuardian ? [{ model: teamModels.guardian, value: guardian, context: this.context, merge: false }] : []),
+      { model: teamModels.invite, value: invite, context: this.context, merge: true },
+      ...members.map(member => ({ model: teamModels.member, value: member, context: this.context, merge: true })),
+      { model: teamModels.message, value: message, context: this.context },
+    ];
+    await this.firestore.saveMultiple(entries);
+    return { name, email, guardian, invite, members, message };
   }
   async saveEvent(event) {
     await this.validateEventSlotCapacity(event.id, event.slotCapacity || 0);

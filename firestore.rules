@@ -2,11 +2,13 @@ rules_version = '2';
 service cloud.firestore {
   match /databases/{database}/documents {
     function signedIn() { return request.auth != null; }
+    function clubAdminPath() { return /databases/$(database)/documents/clubAdmins/$(request.auth.uid); }
+    function isClubAdmin() { return signedIn() && exists(clubAdminPath()) && get(clubAdminPath()).data.active == true; }
     function memberPath(teamId) { return /databases/$(database)/documents/teams/$(teamId)/members/$(request.auth.uid); }
     function isMember(teamId) { return signedIn() && exists(memberPath(teamId)) && get(memberPath(teamId)).data.active == true; }
     function member(teamId) { return get(memberPath(teamId)).data; }
-    function isCoach(teamId) { return isMember(teamId) && member(teamId).role in ['headCoach', 'assistantCoach']; }
-    function isHeadCoach(teamId) { return isMember(teamId) && member(teamId).role == 'headCoach'; }
+    function isCoach(teamId) { return isClubAdmin() || (isMember(teamId) && member(teamId).role in ['headCoach', 'assistantCoach']); }
+    function isHeadCoach(teamId) { return isClubAdmin() || (isMember(teamId) && member(teamId).role == 'headCoach'); }
     function familyId(teamId) { return member(teamId).get('familyId', null); }
     function hasPlayerAccess(teamId, playerId) {
       return isMember(teamId) && (
@@ -34,12 +36,65 @@ service cloud.firestore {
       return getAfter(/databases/$(database)/documents/teams/$(teamId)/events/$(eventId)/slots/$(slotId)).data;
     }
     function invitePath(teamId) { return /databases/$(database)/documents/teams/$(teamId)/invites/$(request.auth.token.email); }
+    function inviteForPath(teamId, email) { return /databases/$(database)/documents/teams/$(teamId)/invites/$(email); }
     function validOwnInvite(teamId) {
       return signedIn() && request.auth.token.email_verified == true && exists(invitePath(teamId)) && get(invitePath(teamId)).data.active == true;
     }
+    function isCoachPromotionInvite(teamId, email) {
+      return request.resource.data.email == email
+        && request.resource.data.role == 'assistantCoach'
+        && request.resource.data.active == true
+        && request.resource.data.get('playerIds', []).size() > 0
+        && request.resource.data.get('guardianIds', []).size() > 0
+        && existsAfter(/databases/$(database)/documents/teams/$(teamId)/guardians/$(request.resource.data.guardianIds[0]))
+        && getAfter(/databases/$(database)/documents/teams/$(teamId)/guardians/$(request.resource.data.guardianIds[0])).data.email == email
+        && getAfter(/databases/$(database)/documents/teams/$(teamId)/guardians/$(request.resource.data.guardianIds[0])).data.playerId in request.resource.data.playerIds;
+    }
+    function isCoachPromotionMember(teamId) {
+      return resource.data.role in ['guardian', 'parent']
+        && request.resource.data.role == 'assistantCoach'
+        && request.resource.data.email == resource.data.email
+        && request.resource.data.active == true
+        && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['role', 'familyId', 'playerIds', 'guardianIds', 'active'])
+        && existsAfter(inviteForPath(teamId, request.resource.data.email))
+        && getAfter(inviteForPath(teamId, request.resource.data.email)).data.role == 'assistantCoach'
+        && request.resource.data.familyId == getAfter(inviteForPath(teamId, request.resource.data.email)).data.get('familyId', null)
+        && request.resource.data.playerIds == getAfter(inviteForPath(teamId, request.resource.data.email)).data.get('playerIds', [])
+        && request.resource.data.guardianIds == getAfter(inviteForPath(teamId, request.resource.data.email)).data.get('guardianIds', []);
+    }
+
+    match /clubAdmins/{userId} {
+      allow read: if isClubAdmin() || (signedIn() && request.auth.uid == userId);
+      allow write: if isClubAdmin();
+    }
+
+    match /coaches/{coachId} {
+      allow read, write: if isClubAdmin();
+    }
+
+    match /fields/{fieldId} {
+      allow read: if signedIn();
+      allow write: if isClubAdmin();
+    }
+
+    match /budgetItems/{budgetItemId} {
+      allow read, write: if isClubAdmin();
+    }
+
+    match /gearItems/{gearItemId} {
+      allow read, write: if isClubAdmin();
+    }
+
+    match /gearDistributions/{distributionId} {
+      allow read, write: if isClubAdmin();
+    }
+
+    match /scheduleScenarios/{scenarioId} {
+      allow read, write: if isClubAdmin();
+    }
 
     match /teams/{teamId} {
-      allow read: if isMember(teamId);
+      allow read: if isClubAdmin() || isMember(teamId);
       allow create, delete: if isHeadCoach(teamId);
       allow update: if isCoach(teamId);
 
@@ -52,7 +107,7 @@ service cloud.firestore {
           && request.resource.data.playerIds == get(invitePath(teamId)).data.get('playerIds', [])
           && request.resource.data.guardianIds == get(invitePath(teamId)).data.get('guardianIds', [])
           && request.resource.data.active == true;
-        allow update: if isHeadCoach(teamId) || (
+        allow update: if isHeadCoach(teamId) || (isCoach(teamId) && isCoachPromotionMember(teamId)) || (
           signedIn()
           && request.auth.uid == userId
           && resource.data.active == true
@@ -63,8 +118,15 @@ service cloud.firestore {
       }
 
       match /invites/{email} {
-        allow read: if isHeadCoach(teamId) || (signedIn() && request.auth.token.email == email);
-        allow write: if isHeadCoach(teamId);
+        allow read: if isCoach(teamId) || (signedIn() && request.auth.token.email == email);
+        allow create: if isHeadCoach(teamId) || (isCoach(teamId) && isCoachPromotionInvite(teamId, email));
+        allow update: if isHeadCoach(teamId) || (
+          isCoach(teamId)
+          && resource.data.role in ['guardian', 'parent']
+          && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['email', 'role', 'familyId', 'playerIds', 'guardianIds', 'active'])
+          && isCoachPromotionInvite(teamId, email)
+        );
+        allow delete: if isHeadCoach(teamId);
       }
 
       match /families/{requestedFamilyId} {
@@ -77,7 +139,17 @@ service cloud.firestore {
 
       match /guardians/{guardianId} {
         allow read: if isCoach(teamId) || hasGuardianConversation(teamId, guardianId);
-        allow create, update, delete: if isHeadCoach(teamId);
+        allow create: if isHeadCoach(teamId) || (
+          isCoach(teamId)
+          && request.resource.data.keys().hasOnly(['playerId', 'name', 'email', 'relationship', 'active', 'createdAt', 'createdByUid'])
+          && exists(/databases/$(database)/documents/teams/$(teamId)/players/$(request.resource.data.playerId))
+          && validText(request.resource.data.name, 100)
+          && validText(request.resource.data.email, 254)
+          && request.resource.data.relationship == 'parent'
+          && request.resource.data.active == true
+          && request.resource.data.createdByUid == request.auth.uid
+        );
+        allow update, delete: if isHeadCoach(teamId);
       }
 
       match /players/{playerId} {
@@ -99,7 +171,7 @@ service cloud.firestore {
       }
 
       match /events/{eventId} {
-        allow read: if isMember(teamId);
+        allow read: if isClubAdmin() || isMember(teamId);
         allow write: if isCoach(teamId);
         match /rsvps/{playerId} {
           allow read: if isCoach(teamId) || ownsPlayer(teamId, playerId);
@@ -135,7 +207,7 @@ service cloud.firestore {
           allow delete: if isCoach(teamId);
         }
         match /slots/{slotId} {
-          allow read: if isMember(teamId);
+          allow read: if isClubAdmin() || isMember(teamId);
           allow create, delete: if isCoach(teamId);
           allow update: if isCoach(teamId) || (
             isMember(teamId)
@@ -170,8 +242,26 @@ service cloud.firestore {
         allow read, write: if isCoach(teamId);
       }
 
+      match /documents/{documentId} {
+        allow read: if isClubAdmin() || isMember(teamId);
+        allow create, update: if isCoach(teamId)
+          && request.resource.data.keys().hasOnly(['title', 'category', 'fileName', 'url', 'path', 'contentType', 'size', 'uploadedAt', 'uploadedByUid'])
+          && validText(request.resource.data.title, 120)
+          && request.resource.data.category in ['pdf', 'map', 'photo']
+          && validText(request.resource.data.fileName, 254)
+          && validText(request.resource.data.url, 2000)
+          && validText(request.resource.data.path, 500)
+          && request.resource.data.contentType.matches('image/.*|application/pdf')
+          && request.resource.data.size is number
+          && request.resource.data.size > 0
+          && request.resource.data.size < 10 * 1024 * 1024
+          && request.resource.data.uploadedAt is string
+          && request.resource.data.uploadedByUid == request.auth.uid;
+        allow delete: if isCoach(teamId);
+      }
+
       match /volunteerSlots/{slotId} {
-        allow read: if isMember(teamId);
+        allow read: if isClubAdmin() || isMember(teamId);
         allow create, delete: if isCoach(teamId);
         allow update: if isCoach(teamId) || (
           isMember(teamId)
@@ -184,7 +274,7 @@ service cloud.firestore {
       }
 
       match /broadcasts/{broadcastId} {
-        allow read: if isMember(teamId);
+        allow read: if isClubAdmin() || isMember(teamId);
         allow create: if isCoach(teamId)
           && request.resource.data.keys().hasOnly(['familyIds', 'title', 'body', 'attachments', 'actionButton', 'sentByUid', 'sentByLabel', 'sentAt'])
           && request.resource.data.familyIds is list && request.resource.data.familyIds.size() == 0
@@ -214,8 +304,8 @@ service cloud.firestore {
                 (
                   request.resource.data.get('guardianId', null) != null
                   && request.resource.data.get('playerId', null) != null
-                  && exists(/databases/$(database)/documents/teams/$(teamId)/guardians/$(request.resource.data.guardianId))
-                  && get(/databases/$(database)/documents/teams/$(teamId)/guardians/$(request.resource.data.guardianId)).data.playerId == request.resource.data.playerId
+                  && existsAfter(/databases/$(database)/documents/teams/$(teamId)/guardians/$(request.resource.data.guardianId))
+                  && getAfter(/databases/$(database)/documents/teams/$(teamId)/guardians/$(request.resource.data.guardianId)).data.playerId == request.resource.data.playerId
                 )
                 || (
                   request.resource.data.get('familyId', null) != null
@@ -224,7 +314,7 @@ service cloud.firestore {
               )
             )
             || (
-              member(teamId).role == 'guardian'
+              member(teamId).role in ['guardian', 'parent', 'headCoach', 'assistantCoach']
               && request.resource.data.senderRole == 'guardian'
               && (
                 (

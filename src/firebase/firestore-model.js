@@ -11,6 +11,13 @@ export function defineFirestoreModel({ collectionPath, fromFirestore, toFirestor
 }
 
 export const teamModels = {
+  clubAdmin: defineFirestoreModel({ collectionPath: () => "clubAdmins" }),
+  coach: defineFirestoreModel({ collectionPath: () => "coaches" }),
+  field: defineFirestoreModel({ collectionPath: () => "fields" }),
+  budgetItem: defineFirestoreModel({ collectionPath: () => "budgetItems" }),
+  gearItem: defineFirestoreModel({ collectionPath: () => "gearItems" }),
+  gearDistribution: defineFirestoreModel({ collectionPath: () => "gearDistributions" }),
+  scheduleScenario: defineFirestoreModel({ collectionPath: () => "scheduleScenarios" }),
   team: defineFirestoreModel({ collectionPath: () => "teams" }),
   member: defineFirestoreModel({ collectionPath: ({ teamId }) => `teams/${teamId}/members` }),
   invite: defineFirestoreModel({ collectionPath: ({ teamId }) => `teams/${teamId}/invites` }),
@@ -23,6 +30,7 @@ export const teamModels = {
   broadcast: defineFirestoreModel({ collectionPath: ({ teamId }) => `teams/${teamId}/broadcasts` }),
   message: defineFirestoreModel({ collectionPath: ({ teamId }) => `teams/${teamId}/messages` }),
   drillCard: defineFirestoreModel({ collectionPath: ({ teamId }) => `teams/${teamId}/drillCards` }),
+  document: defineFirestoreModel({ collectionPath: ({ teamId }) => `teams/${teamId}/documents` }),
   sharedObservation: defineFirestoreModel({ collectionPath: ({ teamId, playerId }) => `teams/${teamId}/players/${playerId}/sharedObservations` }),
   privateObservation: defineFirestoreModel({ collectionPath: ({ teamId, playerId }) => `teams/${teamId}/players/${playerId}/privateObservations` }),
   rsvp: defineFirestoreModel({ collectionPath: ({ teamId, eventId }) => `teams/${teamId}/events/${eventId}/rsvps` }),

@@ -31,7 +31,16 @@ export class FirestoreTeamHubModel {
     await this.repository.revokeGuardian(value, this.state);
     this.#merge("guardians", { ...value, active: false });
   }
+  async promoteParentToCoach(value) {
+    const saved = await this.repository.promoteParentToCoach(value, this.state);
+    this.#merge("guardians", saved.guardian);
+    this.#merge("invites", saved.invite);
+    saved.members.forEach(member => this.#merge("members", member));
+    this.#merge("messages", saved.message);
+    return saved;
+  }
   async saveDrillCard(value) { await this.repository.saveDrillCard(value); this.#merge("drillCards", value); return value; }
+  async saveDocument(value) { await this.repository.saveDocument(value); this.#merge("documents", value); return value; }
   startMessaging(onChange, onError) {
     const stops = [
       this.repository.subscribeBroadcasts(values => { this.state.broadcasts = values; onChange(); }, onError),
@@ -74,6 +83,7 @@ export class FirestoreTeamHubModel {
     return result.rsvp;
   }
   #merge(collection, value) {
+    this.state[collection] ||= [];
     const index = this.state[collection].findIndex(item => item.id === value.id);
     if (index >= 0) this.state[collection][index] = value; else this.state[collection].push(value);
   }

@@ -2,6 +2,7 @@ import { todayIso, uid } from "../shared/format.js";
 import { rosterIdentity } from "../import/roster-importer.js";
 import { scheduleDates } from "../shared/recurrence.js";
 import { drillLibrary, seasonPlan } from "../data/season-playbook.js";
+import { eventWithField } from "../shared/field-location.js";
 
 export class AppViewModel extends EventTarget {
   constructor(model, identity = null, services = {}) {
@@ -9,7 +10,8 @@ export class AppViewModel extends EventTarget {
     this.model = model;
     this.identity = identity;
     this.identityLocked = Boolean(identity);
-    this.role = identity ? (["headCoach", "assistantCoach"].includes(identity.membership.role) ? "coach" : "family") : localStorage.getItem("fairOaksU6.role") || "coach";
+    this.isSuperUser = Boolean(services.superUser);
+    this.role = services.experienceRole || (identity ? (["headCoach", "assistantCoach"].includes(identity.membership.role) ? "coach" : "family") : localStorage.getItem("fairOaksU6.role") || "coach");
     this.familyId = identity ? (identity.membership.familyId || "") : (localStorage.getItem("fairOaksU6.family") || "");
     this.userId = identity?.user.uid || null;
     this.media = services.media || null; this.teamId = services.teamId || "";
@@ -25,8 +27,8 @@ export class AppViewModel extends EventTarget {
   get defaultRoute() { return this.role === "coach" ? "coach-dashboard" : "family-home"; }
   get navigation() {
     return this.role === "coach"
-      ? [["coach-dashboard", "Dashboard"], ["messages", "Messages"], ["development", "Player Development"], ["sessions", "Practices"], ["playbook", "Season Plan"], ["drills", "Drill Cards"], ["roster", "Roster"], ["schedule", "Schedule"], ["volunteers", "Volunteers"], ["standards", "Standards"], ["data-settings", "Data"]]
-      : [["family-home", "Season Home"], ["messages", "Messages"], ["my-player", "Season Story"], ["schedule", "Schedule"], ["volunteers", "Help Out"], ["team-philosophy", "Our Philosophy"]];
+      ? [["coach-dashboard", "Dashboard"], ["fields", "Field Maps"], ["messages", "Messages"], ["documents", "Docs"], ["development", "Player Development"], ["sessions", "Practices"], ["playbook", "Season Plan"], ["drills", "Drill Cards"], ["roster", "Roster"], ["schedule", "Schedule"], ["volunteers", "Volunteers"], ["standards", "Standards"], ["data-settings", "Data"]]
+      : [["family-home", "Season Home"], ["fields", "Game-Day Map"], ["messages", "Messages"], ["documents", "Docs"], ["my-player", "Season Story"], ["schedule", "Schedule"], ["volunteers", "Help Out"], ["team-philosophy", "Our Philosophy"]];
   }
   get activePlayers() { return this.state.players.filter(player => player.active); }
   get practiceEvents() { return [...this.state.games].filter(event => String(event.type).toLowerCase() === "practice").sort((a, b) => (a.date + a.time).localeCompare(b.date + b.time)); }
@@ -36,6 +38,7 @@ export class AppViewModel extends EventTarget {
     return drillLibrary.map(item => ({ ...item, ...(overrides.get(item.id) || {}) }));
   }
   get canUploadDrillImages() { return Boolean(this.media && this.teamId); }
+  get canUploadDocuments() { return this.role === "coach" && Boolean(this.media && this.teamId && this.model.saveDocument); }
   lessonForPractice(eventId) { const index = this.curriculumPracticeEvents.findIndex(event => event.id === eventId); return index >= 0 ? seasonPlan[index] || null : null; }
   practiceSpotlight(referenceDate = todayIso()) {
     const eligible = this.curriculumPracticeEvents;
@@ -51,7 +54,7 @@ export class AppViewModel extends EventTarget {
     return this.state.sessions.find(item => item.eventId === eventId)
       || this.state.sessions.find(item => !item.eventId && event && item.date === event.date && (!item.title || item.title === event.opponent));
   }
-  get isHeadCoach() { return this.identity?.membership.role === "headCoach"; }
+  get isHeadCoach() { return this.isSuperUser || this.identity?.membership.role === "headCoach"; }
   get families() {
     if (this.state.families?.length) return this.state.families.map(family => ({ ...family, players: this.activePlayers.filter(player => player.familyId === family.id) }));
     const families = new Map();
@@ -98,9 +101,41 @@ export class AppViewModel extends EventTarget {
   }
 
   player(id) { return this.state.players.find(player => player.id === id); }
+  field(id) { return (this.state.fields || []).find(field => field.id === id); }
   memberForEmail(email) {
     const normalized = String(email || "").trim().toLowerCase();
     return normalized ? (this.state.members || []).find(member => member.active && member.email?.toLowerCase() === normalized) || null : null;
+  }
+  hasCoachPrivileges(email) {
+    const normalized = String(email || "").trim().toLowerCase();
+    const memberRole = this.memberForEmail(normalized)?.role;
+    const inviteRole = (this.state.invites || []).find(item => item.active && item.email?.toLowerCase() === normalized)?.role;
+    return [memberRole, inviteRole].some(role => ["headCoach", "assistantCoach"].includes(role));
+  }
+  get coachPromotionCandidates() {
+    const candidates = new Map();
+    const add = ({ player, name, email, guardianId = "" }) => {
+      const normalizedEmail = String(email || "").trim().toLowerCase();
+      if (!player || !/^\S+@\S+\.\S+$/.test(normalizedEmail)) return;
+      const member = this.memberForEmail(normalizedEmail);
+      if (this.hasCoachPrivileges(normalizedEmail)) return;
+      const existing = candidates.get(normalizedEmail);
+      const value = {
+        id: `${player.id}:${normalizedEmail}`,
+        playerId: player.id,
+        playerName: `${player.firstName} ${player.lastName}`.trim(),
+        familyId: player.familyId || null,
+        guardianId: guardianId || existing?.guardianId || "",
+        name: name || existing?.name || `${player.lastName} parent`,
+        email: normalizedEmail,
+      };
+      if (!existing || guardianId) candidates.set(normalizedEmail, value);
+    };
+    this.activePlayers.forEach(player => {
+      add({ player, name: `${player.lastName} parent`, email: player.familyEmail });
+      this.guardiansForPlayer(player.id).forEach(guardian => add({ player, name: guardian.name, email: guardian.email, guardianId: guardian.id }));
+    });
+    return [...candidates.values()].sort((a, b) => a.name.localeCompare(b.name));
   }
   lastObservation(playerId, sharedOnly = false) {
     return this.state.observations.filter(item => item.playerId === playerId && (!sharedOnly || item.shared))
@@ -201,6 +236,23 @@ export class AppViewModel extends EventTarget {
       : attending;
     return { limited: true, capacity, assigned, available: Math.max(0, capacity - assigned) };
   }
+  eventRsvpRoster(gameId) {
+    const responses = new Map((this.state.rsvps || [])
+      .filter(item => item.gameId === gameId)
+      .map(item => [item.playerId, item.status]));
+    const players = this.activePlayers
+      .map(player => ({ ...player, rsvpStatus: responses.get(player.id) || "" }))
+      .sort((a, b) => a.lastName.localeCompare(b.lastName) || a.firstName.localeCompare(b.firstName));
+    return {
+      players,
+      attending: players.filter(player => player.rsvpStatus === "yes").length,
+      declined: players.filter(player => player.rsvpStatus === "no").length,
+      maybe: players.filter(player => player.rsvpStatus === "maybe").length,
+      noResponse: players.filter(player => !player.rsvpStatus).length,
+      responded: players.filter(player => Boolean(player.rsvpStatus)).length,
+      total: players.length,
+    };
+  }
   async setRsvp(gameId, playerId, status) {
     if (!["yes", "no", "maybe"].includes(status)) throw new Error("Choose Going, Maybe, or Not going.");
     const existing = (this.state.rsvps || []).find(item => item.gameId === gameId && item.playerId === playerId);
@@ -268,6 +320,22 @@ export class AppViewModel extends EventTarget {
     if (!existing) throw new Error("That guardian relationship could not be found.");
     await this.model.revokeGuardian(existing); this.changed();
   }
+  async promoteParentToCoach(candidate) {
+    if (this.role !== "coach") throw new Error("Only a coach can promote a parent to coach.");
+    const eligible = this.coachPromotionCandidates.find(item => item.id === candidate?.id);
+    if (!eligible) throw new Error("That parent is no longer eligible for promotion.");
+    if (!this.model.promoteParentToCoach) throw new Error("Coach promotion is not available in this workspace.");
+    const value = {
+      ...eligible,
+      messageId: uid("message"),
+      readmeUrl: typeof window === "undefined" ? "/coach-readme.html" : new URL("/coach-readme.html", window.location.origin).href,
+      promotedByUid: this.userId,
+      promotedByLabel: this.identity?.membership.role === "headCoach" ? "Head Coach" : "Coach",
+    };
+    const saved = await this.model.promoteParentToCoach(value);
+    this.changed();
+    return `${saved.name} is now an assistant coach. Their parent access was preserved and the onboarding message was sent.`;
+  }
   async uploadDrillImage(drillId, file) {
     if (!this.isHeadCoach && this.role !== "coach") throw new Error("Only coaches can manage drill-card artwork.");
     if (!this.media || !this.teamId) throw new Error("Drill-card storage is not available.");
@@ -276,6 +344,29 @@ export class AppViewModel extends EventTarget {
     const [image] = await this.media.upload([file], `coachTeams/${this.teamId}/drill-cards`, drillId);
     const value = { id: drillId, imageUrl: image.url, imagePath: image.path, fileName: image.fileName, updatedAt: new Date().toISOString(), updatedByUid: this.userId };
     await this.model.saveDrillCard(value); this.upsertLocal("drillCards", value); this.changed(); return value;
+  }
+  async uploadDocument({ title, category, file }) {
+    if (this.role !== "coach") throw new Error("Only coaches can add files to Docs.");
+    if (!this.media || !this.teamId || !this.model.saveDocument) throw new Error("Document storage is not available.");
+    const cleanTitle = String(title || "").trim();
+    if (!cleanTitle) throw new Error("Add a title for this file.");
+    if (cleanTitle.length > 120) throw new Error("Keep the document title to 120 characters or fewer.");
+    if (!["pdf", "map", "photo"].includes(category)) throw new Error("Choose PDF, Map, or Photo.");
+    if (!file) throw new Error("Choose a PDF or image to upload.");
+    const supportedTypes = ["application/pdf", "image/jpeg", "image/png", "image/webp"];
+    const isPdf = file.type === "application/pdf"; const isImage = supportedTypes.slice(1).includes(file.type);
+    if (category === "pdf" && !isPdf) throw new Error("The PDF category accepts PDF files only.");
+    if (category === "photo" && !isImage) throw new Error("The Photo category accepts image files only.");
+    if (!supportedTypes.includes(file.type)) throw new Error("Docs accepts PDF, JPEG, PNG, and WebP files.");
+    if (!Number(file.size)) throw new Error("The selected file is empty.");
+    if (file.size >= 10 * 1024 * 1024) throw new Error("Keep each Docs file under 10 MB.");
+    const id = uid("document");
+    const [uploaded] = await this.media.upload([file], `teams/${this.teamId}/documents`, id);
+    const value = {
+      id, title: cleanTitle, category, fileName: uploaded.fileName, url: uploaded.url, path: uploaded.path,
+      contentType: uploaded.contentType, size: uploaded.size, uploadedAt: new Date().toISOString(), uploadedByUid: this.userId,
+    };
+    await this.model.saveDocument(value); this.upsertLocal("documents", value); this.changed(); return value;
   }
   async sendTeamBroadcast(title, body) {
     if (this.role !== "coach") throw new Error("Only a coach can send a team announcement.");
@@ -351,7 +442,21 @@ export class AppViewModel extends EventTarget {
     return { count: events.length, message: `Updated the full series. It now contains ${events.length} events.` };
   }
   #eventFields(draft) {
-    return { type: draft.type, status: draft.status, time: draft.time, opponent: draft.opponent, location: draft.location, notes: draft.notes, slotCapacity: Number(draft.slotCapacity || 0) };
+    const competitive = ["game", "scrimmage", "jamboree"].includes(String(draft.type).toLowerCase());
+    const gameDetails = competitive ? {
+      homeTeamName: draft.gameDetails?.homeTeamName?.trim() || this.state.team?.name || "",
+      awayTeamName: draft.gameDetails?.awayTeamName?.trim() || draft.opponent || "",
+      ageGroup: draft.gameDetails?.ageGroup?.trim() || this.state.team?.ageGroup || this.state.team?.division || "",
+      homeCoachName: draft.gameDetails?.homeCoachName?.trim() || "",
+      awayCoachName: draft.gameDetails?.awayCoachName?.trim() || "",
+    } : null;
+    return {
+      type: draft.type, status: draft.status, time: draft.time,
+      opponent: competitive ? gameDetails.awayTeamName : draft.opponent,
+      gameDetails,
+      ...eventWithField(draft, this.state.fields || []),
+      notes: draft.notes, slotCapacity: Number(draft.slotCapacity || 0),
+    };
   }
   upsertLocal(collection, item) {
     const index = this.state[collection].findIndex(value => value.id === item.id);

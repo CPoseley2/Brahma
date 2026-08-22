@@ -15,11 +15,11 @@ export class TeamHubModel {
     const normalized = {
       ...clone(this.seed), ...value,
       team: { ...this.seed.team, ...(value.team || {}) },
-      players: value.players || [], games: value.games || [], eventSlots: value.eventSlots || [],
+      fields: value.fields || [], players: value.players || [], games: value.games || [], eventSlots: value.eventSlots || [],
       volunteerSlots: value.volunteerSlots || [], sessions: value.sessions || [],
       observations: value.observations || [], rsvps: value.rsvps || [],
       broadcasts: value.broadcasts || [], messages: value.messages || [],
-      guardians: value.guardians || [], members: value.members || [], drillCards: value.drillCards || [],
+      guardians: value.guardians || [], members: value.members || [], invites: value.invites || [], drillCards: value.drillCards || [], documents: value.documents || [],
       skillFramework: value.skillFramework || this.seed.skillFramework,
     };
     if (normalized.team.name === "Fair Oaks Soccer U6") normalized.team.name = "Fair Oaks Soccer Club U6";

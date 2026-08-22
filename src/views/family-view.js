@@ -5,6 +5,7 @@ import tacticsToken from "../assets/tokens/tactics.png";
 import { tokenById } from "../data/season-playbook.js";
 import { FamilyDashboardViewModel } from "../viewmodels/family-dashboard-view-model.js";
 import { ageLabel, escapeHtml, formatDate, formatTime } from "../shared/format.js";
+import { hasExactPin, locationForEvent, locationLinks } from "../shared/field-location.js";
 
 const tokenImages = { teamwork: teamworkToken, love: loveToken, brave: braveToken, tactics: tacticsToken };
 const tokenChip = id => {
@@ -77,11 +78,13 @@ export class FamilyView {
         <p>The next team event has not been posted yet.</p><button class="button" data-route="schedule">Open schedule</button>`;
       return;
     }
+    const location = locationForEvent(nextEvent, this.vm.state.fields || []); const links = locationLinks(location);
+    const directions = links ? `<div class="family-next-map"><iframe title="Map to ${escapeHtml(location.name)}" loading="lazy" referrerpolicy="no-referrer-when-downgrade" src="${escapeHtml(links.embed)}"></iframe><div><span class="badge ${hasExactPin(location) ? "blue" : "gold"}">${hasExactPin(location) ? "Exact game pin" : "Address only"}</span><strong>${escapeHtml(location.arrivalLabel || location.name)}</strong>${location.arrivalInstructions ? `<small>${escapeHtml(location.arrivalInstructions)}</small>` : ""}<a class="button primary" href="${escapeHtml(links.directions)}" target="_blank" rel="noopener noreferrer">Drive to field</a><button class="button" data-route="fields">Parking & map details</button></div></div>` : `<div class="family-map-missing"><strong>Exact field not assigned yet</strong><span>Check with the coach before leaving.</span><button class="button" data-route="fields">Open field maps</button></div>`;
     container.innerHTML = `<div><p class="eyebrow">${escapeHtml(nextEvent.when)}</p>
       <h2>${escapeHtml(nextEvent.type)} · ${formatDate(nextEvent.date)}</h2>
       <p>${formatTime(nextEvent.time)} · ${escapeHtml(nextEvent.location || "Location TBD")}</p>
       <span>${escapeHtml(nextEvent.opponent || "Team event")}</span>
-      <div class="family-availability">${nextEvent.limited ? `<strong>${nextEvent.available}</strong> of ${nextEvent.capacity} slots available` : "No attendance limit"}</div></div>
+      <div class="family-availability">${nextEvent.limited ? `<strong>${nextEvent.available}</strong> of ${nextEvent.capacity} slots available` : "No attendance limit"}</div>${directions}</div>
       <label class="family-rsvp"><span>${escapeHtml(player.firstName)}’s RSVP</span>
       <select data-family-rsvp data-event-id="${nextEvent.id}" data-player-id="${player.id}">
       <option value="" disabled ${!nextEvent.rsvp ? "selected" : ""}>Choose…</option>

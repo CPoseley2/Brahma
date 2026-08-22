@@ -1,4 +1,5 @@
 import { escapeHtml, formatDate, formatTime } from "../shared/format.js";
+import { hasExactPin, locationForEvent, locationLinks } from "../shared/field-location.js";
 
 const empty = message => `<div class="empty-state">${message}</div>`;
 
@@ -38,6 +39,8 @@ export class SharedView {
       const availabilityBadge = availability.limited
         ? `<span class="badge ${availability.available === 0 ? "gold" : "blue"}">${availability.available} of ${availability.capacity} slots available</span>`
         : `<span class="badge gray">No attendance limit</span>`;
+      const rsvpRoster = this.vm.eventRsvpRoster(game.id);
+      const coachRsvp = this.vm.role === "coach" ? `<button type="button" class="badge blue rsvp-summary-button" data-action="view-rsvps" data-id="${escapeHtml(game.id)}" aria-label="View RSVP roster for this event">${rsvpRoster.attending} attending</button>` : "";
       const familyActions = this.vm.role === "family" && family ? `<div class="family-rsvps">${family.players.map(player => {
         const current = this.vm.state.rsvps.find(item => item.gameId === game.id && item.playerId === player.id)?.status || "";
         const attending = current === "yes";
@@ -46,7 +49,9 @@ export class SharedView {
       }).join("")}</div>` : "";
       const seriesActions = game.seriesId ? `<button class="button small" data-action="edit-game-series" data-id="${game.id}">Edit series</button><button class="button small danger" data-action="delete-game-series" data-id="${game.id}">Delete series</button>` : "";
       const actions = this.vm.role === "coach" ? `<div class="button-row event-actions"><button class="button small" data-action="edit-game" data-id="${game.id}">Edit this event</button>${seriesActions}<button class="button small danger" data-action="delete-game" data-id="${game.id}">Delete this event</button></div>` : "";
-      return `<article class="list-card"><div><div class="name">${formatDate(game.date)} · ${formatTime(game.time)}</div><p>${escapeHtml(game.type)} · ${escapeHtml(game.opponent || "TBD")} · ${escapeHtml(game.location || "Location TBD")}</p>${game.notes ? `<p class="small muted">${escapeHtml(game.notes)}</p>` : ""}<div class="button-row event-badges"><span class="badge">${escapeHtml(game.status)}</span>${availabilityBadge}${game.seriesId ? `<span class="badge blue">Recurring series</span>` : ""}</div>${familyActions}</div>${actions}</article>`;
+      const location = locationForEvent(game, this.vm.state.fields || []); const links = locationLinks(location);
+      const mapActions = links ? `<div class="event-location"><div><span class="event-pin" aria-hidden="true">⌖</span><span><strong>${escapeHtml(location.name)}</strong><small>${escapeHtml(location.arrivalLabel || location.address || "Open the map for directions")}</small></span></div><div class="button-row"><span class="badge ${hasExactPin(location) ? "blue" : "gold"}">${hasExactPin(location) ? "Exact pin" : "Address only"}</span><a class="button small primary" href="${escapeHtml(links.directions)}" target="_blank" rel="noopener noreferrer">Directions</a><button class="button small" data-route="fields">Map details</button></div></div>` : `<div class="event-location missing"><strong>Exact field not assigned</strong><button class="button small" data-route="fields">Check field maps</button></div>`;
+      return `<article class="list-card schedule-event-card"><div><div class="name">${formatDate(game.date)} · ${formatTime(game.time)}</div><p>${escapeHtml(game.type)} · ${escapeHtml(game.opponent || "TBD")}</p>${mapActions}${game.notes ? `<p class="small muted">${escapeHtml(game.notes)}</p>` : ""}<div class="button-row event-badges"><span class="badge">${escapeHtml(game.status)}</span>${coachRsvp}${availabilityBadge}${game.seriesId ? `<span class="badge blue">Recurring series</span>` : ""}</div>${familyActions}</div>${actions}</article>`;
     }).join("") || empty("No team events have been entered yet.");
   }
   async #changeRsvp(select) {

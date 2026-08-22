@@ -29,6 +29,7 @@ test("legacy parent roles use the guardian-safe data path", async () => {
     fetchAll: async (model, context = {}) => {
       const collection = model.collectionPath({ teamId: "fair-oaks-u6", ...context });
       fetchedCollections.push(collection);
+      if (collection === "fields") return [{ id: "field-two", name: "Field 2", latitude: 38.6, longitude: -121.2 }];
       if (collection.endsWith("/events")) return [];
       return [];
     },
@@ -41,6 +42,7 @@ test("legacy parent roles use the guardian-safe data path", async () => {
   const repository = new TeamHubRepository(firestore, "fair-oaks-u6");
   const result = await repository.loadTeamHub({ role: "parent", familyId: "family-a", active: true });
   assert.deepEqual(result.players.map(player => player.id), ["player-a"]);
+  assert.deepEqual(result.fields.map(field => field.id), ["field-two"]);
   assert.ok(!fetchedCollections.some(path => path.endsWith("/members")));
   assert.ok(!fetchedCollections.some(path => path.endsWith("/sessions")));
   assert.ok(!fetchedCollections.some(path => path.endsWith("/drillCards")));
@@ -115,6 +117,55 @@ test("revoking one guardian relationship preserves another relationship for the 
   assert.equal(invite.active, true);
   assert.deepEqual(invite.playerIds, ["player-b"]);
   assert.deepEqual(invite.guardianIds, ["relationship-b"]);
+});
+
+test("any coach can promote an existing parent while preserving parent access and sending onboarding", async () => {
+  const saved = [];
+  const firestore = {
+    fetch: async (_model, id) => id === "parent@example.com"
+      ? { id, email: id, role: "guardian", familyId: "family-a", playerIds: ["player-a"], guardianIds: ["relationship-a"], active: true }
+      : null,
+    fetchWhere: async () => [{ id: "parent-user", email: "parent@example.com", role: "guardian", familyId: "family-a", playerIds: ["player-a"], guardianIds: ["relationship-a"], active: true }],
+    saveMultiple: async entries => saved.push(...entries),
+  };
+  const repository = new TeamHubRepository(firestore, "fair-oaks-u6");
+  const state = {
+    players: [{ id: "player-a", firstName: "Tallac", lastName: "Player", familyId: "family-a" }],
+    guardians: [{ id: "relationship-a", playerId: "player-a", name: "Pat Parent", email: "parent@example.com", relationship: "parent", active: true }],
+  };
+  const result = await repository.promoteParentToCoach({
+    playerId: "player-a", name: "Pat Parent", email: "parent@example.com", messageId: "message-upgrade",
+    readmeUrl: "https://team.example/coach-readme.html", promotedByUid: "assistant", promotedByLabel: "Coach",
+  }, state);
+  assert.equal(result.invite.role, "assistantCoach");
+  assert.equal(result.invite.familyId, "family-a");
+  assert.deepEqual(result.invite.playerIds, ["player-a"]);
+  assert.deepEqual(result.invite.guardianIds, ["relationship-a"]);
+  assert.equal(result.members[0].role, "assistantCoach");
+  assert.equal(saved.some(entry => entry.model.collectionPath({ teamId: "fair-oaks-u6" }).endsWith("/guardians")), false);
+  assert.match(result.message.body, /You have been upgraded to a coach/);
+  assert.match(result.message.body, /coach-readme\.html/);
+  assert.equal(result.message.guardianId, "relationship-a");
+});
+
+test("coach promotion creates parent access when the roster email has no guardian relationship", async () => {
+  const saved = [];
+  const firestore = {
+    fetch: async () => null,
+    fetchWhere: async () => [],
+    saveMultiple: async entries => saved.push(...entries),
+  };
+  const repository = new TeamHubRepository(firestore, "fair-oaks-u6");
+  const result = await repository.promoteParentToCoach({
+    playerId: "player-a", name: "Player parent", email: "parent@example.com", messageId: "message-upgrade",
+    readmeUrl: "/coach-readme.html", promotedByUid: "coach", promotedByLabel: "Head Coach",
+  }, { players: [{ id: "player-a", firstName: "Tallac", lastName: "Player", familyId: "family-a" }], guardians: [] });
+  assert.equal(result.guardian.relationship, "parent");
+  assert.equal(result.invite.role, "assistantCoach");
+  assert.equal(result.invite.familyId, "family-a");
+  assert.deepEqual(result.invite.playerIds, ["player-a"]);
+  assert.deepEqual(result.invite.guardianIds, [result.guardian.id]);
+  assert.equal(saved.length, 3);
 });
 
 test("adding a capacity creates deterministic slots and assigns existing attendees", async () => {

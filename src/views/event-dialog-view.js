@@ -14,8 +14,13 @@ export class EventDialogView {
   render() {
     if (!this.form) return;
     const draft = this.#draft(); const weekly = draft.scheduleMode === "weekly";
+    const competitive = ["game", "scrimmage", "jamboree"].includes(draft.type.toLowerCase());
     this.form.querySelector("[data-field=single-date]").classList.toggle("hidden", weekly);
     this.form.querySelector("[data-field=recurrence]").classList.toggle("hidden", !weekly);
+    this.form.querySelector("[data-field=custom-location]").classList.toggle("hidden", Boolean(draft.fieldId));
+    this.form.querySelector("[data-field=game-details]").classList.toggle("hidden", !competitive);
+    this.form.querySelector("[data-field=event-title]").classList.toggle("hidden", competitive);
+    ["homeTeamName", "awayTeamName", "ageGroup"].forEach(name => { this.form.elements.namedItem(name).required = competitive; });
     const feedback = this.form.querySelector("#eventSchedulePreview");
     try {
       const dates = this.vm.previewEventSchedule(draft); this.previewError = "";
@@ -23,7 +28,8 @@ export class EventDialogView {
         const days = draft.seriesWeekdays.map(day => weekdayLabels[day].slice(0, 3)).join(" and ");
         const scopeNote = draft.editScope === "series" ? " Saving will reconcile the date pattern and apply the shared details to every occurrence." : "";
         feedback.className = "summary-box";
-        feedback.innerHTML = `<strong>${dates.length} ${escapeHtml(draft.type.toLowerCase())} events</strong><br>${escapeHtml(days)} from ${formatDate(dates[0])} through ${formatDate(dates.at(-1))}. All occurrences use ${escapeHtml(draft.time ? formatTime(draft.time) : "the same time")}, ${escapeHtml(draft.location || "the same location")}, and ${draft.slotCapacity ? `${draft.slotCapacity} RSVP slots` : "unlimited RSVPs"}.${escapeHtml(scopeNote)}`;
+        const field = this.vm.field(draft.fieldId);
+        feedback.innerHTML = `<strong>${dates.length} ${escapeHtml(draft.type.toLowerCase())} events</strong><br>${escapeHtml(days)} from ${formatDate(dates[0])} through ${formatDate(dates.at(-1))}. All occurrences use ${escapeHtml(draft.time ? formatTime(draft.time) : "the same time")}, ${escapeHtml(field?.name || draft.location || "the same location")}, and ${draft.slotCapacity ? `${draft.slotCapacity} RSVP slots` : "unlimited RSVPs"}.${escapeHtml(scopeNote)}`;
       } else {
         feedback.className = "summary-box";
         feedback.innerHTML = `<strong>One ${escapeHtml(draft.type.toLowerCase())} event</strong><br>${formatDate(dates[0])}${draft.time ? ` at ${escapeHtml(draft.time)}` : ""} · ${draft.slotCapacity ? `${draft.slotCapacity} RSVP slots` : "Unlimited RSVPs"}.`;
@@ -46,7 +52,16 @@ export class EventDialogView {
     setValue(this.form, "date", item?.date || todayIso());
     setValue(this.form, "seriesStartDate", item?.seriesStartDate || item?.occurrenceDate || item?.date || todayIso());
     setValue(this.form, "seriesEndDate", item?.seriesEndDate || item?.occurrenceDate || item?.date || todayIso());
+    this.form.elements.fieldId.innerHTML = `<option value="">Other location</option>${(this.vm.state.fields || []).filter(field => field.status !== "Closed").sort((a, b) => a.name.localeCompare(b.name)).map(field => `<option value="${escapeHtml(field.id)}">${escapeHtml(field.name)}${field.code ? ` · Field ${escapeHtml(field.code)}` : ""} · ${escapeHtml(field.arrivalLabel || field.address || "Map details pending")}</option>`).join("")}`;
+    setValue(this.form, "fieldId", item?.fieldId || "");
     ["time", "opponent", "location", "notes"].forEach(name => setValue(this.form, name, item?.[name]));
+    const details = item?.gameDetails || {};
+    const team = this.vm.state.team || {};
+    setValue(this.form, "homeTeamName", details.homeTeamName || item?.homeTeamName || team.name || "");
+    setValue(this.form, "awayTeamName", details.awayTeamName || item?.awayTeamName || item?.opponent || "");
+    setValue(this.form, "ageGroup", details.ageGroup || item?.ageGroup || team.ageGroup || team.division || String(team.name || "").match(/\bU\d+\b/i)?.[0]?.toUpperCase() || "");
+    setValue(this.form, "homeCoachName", details.homeCoachName || item?.homeCoachName || this.vm.identity?.user?.displayName || "");
+    setValue(this.form, "awayCoachName", details.awayCoachName || item?.awayCoachName || "");
     const selectedDays = item?.seriesWeekdays || [2, 4];
     this.form.querySelectorAll("[name=seriesWeekday]").forEach(input => { input.checked = selectedDays.includes(Number(input.value)); });
     this.form.querySelector("[data-field=schedule-mode]").classList.toggle("hidden", Boolean(item));
@@ -60,7 +75,11 @@ export class EventDialogView {
       type: value("type"), status: value("status"), scheduleMode: value("scheduleMode"), date: value("date"),
       seriesStartDate: value("seriesStartDate"), seriesEndDate: value("seriesEndDate"),
       seriesWeekdays: [...this.form.querySelectorAll("[name=seriesWeekday]:checked")].map(input => Number(input.value)),
-      time: value("time"), opponent: value("opponent").trim(), location: value("location").trim(), notes: value("notes").trim(),
+      time: value("time"), opponent: value("opponent").trim(), fieldId: value("fieldId"), location: value("location").trim(), notes: value("notes").trim(),
+      gameDetails: {
+        homeTeamName: value("homeTeamName").trim(), awayTeamName: value("awayTeamName").trim(), ageGroup: value("ageGroup").trim(),
+        homeCoachName: value("homeCoachName").trim(), awayCoachName: value("awayCoachName").trim(),
+      },
       slotCapacity: Number(value("slotCapacity") || 0),
     };
   }

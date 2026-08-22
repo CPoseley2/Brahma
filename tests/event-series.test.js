@@ -63,3 +63,48 @@ test("does not reduce a limited event below current attendance", async () => {
     /cannot be reduced below current attendance/,
   );
 });
+
+test("a coach saves structured home and away details with the field snapshot", async () => {
+  const state = {
+    team: { name: "Brahma", division: "U6" },
+    games: [], eventSlots: [], rsvps: [],
+    fields: [{ id: "field-2", code: "2A", name: "Field 2", park: "Fair Oaks Park", mapAsset: { url: "https://example.com/map.png", contentType: "image/png", position: { xPercent: 40, yPercent: 60 } } }],
+  };
+  const model = { state, async upsert(_collection, event) { state.games.push(event); } };
+  const vm = new AppViewModel(model, { user: { uid: "coach" }, membership: { role: "headCoach" } });
+  await vm.saveEventSchedule({
+    scheduleMode: "once", date: "2026-09-12", type: "Game", status: "Scheduled", time: "09:30", fieldId: "field-2", notes: "", slotCapacity: 0,
+    gameDetails: { homeTeamName: "Brahma", awayTeamName: "Comets", ageGroup: "U6", homeCoachName: "Alex", awayCoachName: "Sam" },
+  });
+  assert.deepEqual(state.games[0].gameDetails, { homeTeamName: "Brahma", awayTeamName: "Comets", ageGroup: "U6", homeCoachName: "Alex", awayCoachName: "Sam" });
+  assert.equal(state.games[0].opponent, "Comets");
+  assert.equal(state.games[0].fieldLocation.code, "2A");
+  assert.deepEqual(state.games[0].fieldLocation.mapAsset.position, { xPercent: 40, yPercent: 60 });
+});
+
+test("coach RSVP roster summarizes every active player consistently", () => {
+  const state = {
+    games: [{ id: "practice-1", type: "Practice", slotCapacity: 0 }],
+    players: [
+      { id: "player-b", firstName: "Bailey", lastName: "Zulu", active: true },
+      { id: "player-a", firstName: "Alex", lastName: "Alpha", active: true },
+      { id: "player-c", firstName: "Casey", lastName: "Middle", active: true },
+      { id: "player-d", firstName: "Drew", lastName: "Later", active: true },
+      { id: "inactive", firstName: "Inactive", lastName: "Player", active: false },
+    ],
+    rsvps: [
+      { gameId: "practice-1", playerId: "player-a", status: "yes" },
+      { gameId: "practice-1", playerId: "player-b", status: "no" },
+      { gameId: "practice-1", playerId: "player-c", status: "maybe" },
+      { gameId: "other-event", playerId: "player-d", status: "yes" },
+    ],
+  };
+  const vm = new AppViewModel({ state }, { user: { uid: "coach" }, membership: { role: "assistantCoach" } });
+  const roster = vm.eventRsvpRoster("practice-1");
+  assert.deepEqual({ attending: roster.attending, declined: roster.declined, maybe: roster.maybe, noResponse: roster.noResponse, responded: roster.responded, total: roster.total }, {
+    attending: 1, declined: 1, maybe: 1, noResponse: 1, responded: 3, total: 4,
+  });
+  assert.deepEqual(roster.players.map(player => [player.id, player.rsvpStatus]), [
+    ["player-a", "yes"], ["player-d", ""], ["player-c", "maybe"], ["player-b", "no"],
+  ]);
+});
