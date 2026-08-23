@@ -1,6 +1,6 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { eventWithField, fieldMapAsset, fieldSnapshot, gameMapDetails, hasExactPin, hasFieldMap, locationForEvent } from "../src/shared/field-location.js";
+import { eventWithField, fieldMapAsset, fieldSnapshot, gameEventMapFeed, gameMapDetails, hasExactPin, hasFieldMap, locationForEvent, resolveEventField } from "../src/shared/field-location.js";
 import { confirmedEventsAtArchive } from "../src/shared/field-map-explorer.js";
 import { fieldMapArchives } from "../src/data/field-map-archives.js";
 
@@ -59,6 +59,38 @@ test("the location picker receives every confirmed Phoenix date in chronological
     { id: "first", fieldId: "phoenix-p1", status: "Scheduled", date: "2026-09-12", time: "09:30" },
   ];
   assert.deepEqual(confirmedEventsAtArchive(events, fields, fieldMapArchives, "phoenix-park-2026").map(event => event.id), ["first", "later"]);
+});
+
+test("all seven 2026 locations expose only permitted mapped field regions", () => {
+  assert.equal(fieldMapArchives.length, 7);
+  assert.equal(fieldMapArchives.reduce((total, archive) => total + Object.keys(archive.fields).length, 0), 29);
+  const orangevale = fieldMapArchives.find(archive => archive.id === "orangevale-open-2026");
+  assert.deepEqual(Object.keys(orangevale.fields).sort(), ["O1-E", "O1-W"]);
+  assert.equal(Object.hasOwn(orangevale.fields, "O2"), false);
+  fieldMapArchives.forEach(archive => Object.values(archive.fields).forEach(position => {
+    assert.ok(position.xPercent >= 0 && position.xPercent <= 100);
+    assert.ok(position.yPercent >= 0 && position.yPercent <= 100);
+    assert.ok(position.widthPercent > 0 && position.heightPercent > 0);
+  }));
+});
+
+test("legacy scheduled games automatically resolve a field and produce the map feed", () => {
+  const fields = [
+    { id: "carnegie-c2-n", name: "Carnegie Middle · C2-N", park: "Carnegie Middle", code: "C2-N", mapAssetId: "carnegie-middle-2026" },
+    { id: "carnegie-c2-s", name: "Carnegie Middle · C2-S", park: "Carnegie Middle", code: "C2-S", mapAssetId: "carnegie-middle-2026" },
+  ];
+  const event = {
+    id: "scheduled-game", type: "Game", status: "Scheduled", date: "2026-09-26", time: "11:15",
+    location: "Andrew Carnegie Middle School C2-S", opponent: "Comets", homeCoachName: "Alex",
+  };
+  assert.equal(resolveEventField(event, fields)?.id, "carnegie-c2-s");
+  const feed = gameEventMapFeed(event, { name: "Brahma U10", division: "U10" }, fields, fieldMapArchives);
+  assert.deepEqual({ confirmed: feed.confirmed, fieldId: feed.fieldId, fieldCode: feed.fieldCode, mapAssetId: feed.mapAssetId }, {
+    confirmed: true, fieldId: "carnegie-c2-s", fieldCode: "C2-S", mapAssetId: "carnegie-middle-2026",
+  });
+  assert.equal(feed.homeTeamName, "Brahma U10");
+  assert.equal(feed.awayTeamName, "Comets");
+  assert.equal(feed.homeCoachName, "Alex");
 });
 
 test("a field diagram uses normalized percentages and survives the event snapshot", () => {

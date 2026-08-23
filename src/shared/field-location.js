@@ -84,8 +84,27 @@ export function fieldSnapshot(field = {}, archives = []) {
   };
 }
 
+export function resolveEventField(event = {}, fields = []) {
+  const requestedIds = [event.fieldId, event.locationId, event.venueFieldId, event.fieldLocation?.id].filter(Boolean).map(normalized => String(normalized));
+  const byId = fields.find(field => requestedIds.includes(String(field.id)));
+  if (byId) return byId;
+  const requestedCode = String(event.fieldCode || event.gameMapFeed?.fieldCode || event.fieldLocation?.code || event.fieldLocation?.fieldCode || "").trim().toUpperCase();
+  if (requestedCode) {
+    const byCode = fields.find(field => String(field.code || field.fieldCode || "").trim().toUpperCase() === requestedCode);
+    if (byCode) return byCode;
+  }
+  const locationText = String(event.location || event.venue || event.fieldName || "").trim().toUpperCase().replace(/[^A-Z0-9]/g, "");
+  if (!locationText) return null;
+  const matches = fields.filter(field => {
+    const code = String(field.code || field.fieldCode || "").trim().toUpperCase().replace(/[^A-Z0-9]/g, "");
+    const venue = String(`${field.park || ""} ${field.name || ""}`).trim().toUpperCase().replace(/[^A-Z0-9]/g, "");
+    return (code && locationText.includes(code)) || (venue.length >= 6 && (locationText.includes(venue) || venue.includes(locationText)));
+  });
+  return matches.length === 1 ? matches[0] : null;
+}
+
 export function locationForEvent(event = {}, fields = []) {
-  const current = fields.find(field => field.id === event.fieldId);
+  const current = resolveEventField(event, fields);
   const snapshot = event.fieldLocation;
   const field = current || snapshot || null;
   if (!field && !event.location) return null;
@@ -102,18 +121,21 @@ export function locationForEvent(event = {}, fields = []) {
 }
 
 const ageGroupFromTeam = team => team?.ageGroup || team?.division || String(team?.name || "").match(/\bU\d+\b/i)?.[0]?.toUpperCase() || "";
+const homeCoachFromTeam = team => team?.headCoachName || team?.coachName || team?.coaches?.find(coach => ["headCoach", "head coach"].includes(coach.role))?.name || team?.coaches?.[0]?.name || "";
+const entityName = value => typeof value === "string" ? value : value?.name || "";
 
 export function gameMapDetails(event = {}, team = {}, fields = [], archives = []) {
   const location = locationForEvent(event, fields);
   const details = event.gameDetails || {};
+  const feed = event.gameMapFeed || {};
   return {
-    homeTeamName: details.homeTeamName || event.homeTeamName || team.name || "Home team TBD",
-    awayTeamName: details.awayTeamName || event.awayTeamName || event.opponent || "Away team TBD",
+    homeTeamName: details.homeTeamName || event.homeTeamName || entityName(event.homeTeam) || feed.homeTeamName || team.name || "Home team TBD",
+    awayTeamName: details.awayTeamName || event.awayTeamName || entityName(event.awayTeam) || feed.awayTeamName || event.opponent || "Away team TBD",
     date: event.date || "",
     time: event.time || "",
-    ageGroup: details.ageGroup || event.ageGroup || ageGroupFromTeam(team) || "Age group TBD",
-    homeCoachName: details.homeCoachName || event.homeCoachName || "Coach TBD",
-    awayCoachName: details.awayCoachName || event.awayCoachName || "Coach TBD",
+    ageGroup: details.ageGroup || event.ageGroup || event.division || feed.ageGroup || ageGroupFromTeam(team) || "Age group TBD",
+    homeCoachName: details.homeCoachName || event.homeCoachName || entityName(event.homeCoach) || feed.homeCoachName || homeCoachFromTeam(team) || "Coach TBD",
+    awayCoachName: details.awayCoachName || event.awayCoachName || entityName(event.awayCoach) || feed.awayCoachName || "Coach TBD",
     locationName: location?.park || location?.name || event.location || "Location TBD",
     fieldCode: location?.code || event.fieldCode || location?.name || "Field TBD",
     location,
@@ -121,8 +143,27 @@ export function gameMapDetails(event = {}, team = {}, fields = [], archives = []
   };
 }
 
+export function gameEventMapFeed(event = {}, team = {}, fields = [], archives = []) {
+  const details = gameMapDetails(event, team, fields, archives);
+  return {
+    version: 1,
+    confirmed: event.status === "Scheduled",
+    date: details.date,
+    time: details.time,
+    homeTeamName: details.homeTeamName,
+    awayTeamName: details.awayTeamName,
+    ageGroup: details.ageGroup,
+    homeCoachName: details.homeCoachName,
+    awayCoachName: details.awayCoachName,
+    fieldId: details.location?.id || event.fieldId || "",
+    fieldCode: details.fieldCode,
+    locationName: details.locationName,
+    mapAssetId: details.mapAsset?.archiveId || details.location?.mapAssetId || "",
+  };
+}
+
 export function eventWithField(draft, fields = [], archives = []) {
-  const field = fields.find(item => item.id === draft.fieldId);
+  const field = resolveEventField(draft, fields);
   return field
     ? { fieldId: field.id, location: field.name, fieldLocation: fieldSnapshot(field, archives) }
     : { fieldId: "", location: draft.location || "", fieldLocation: null };

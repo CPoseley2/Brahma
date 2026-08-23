@@ -80,6 +80,9 @@ test("a coach saves structured home and away details with the field snapshot", a
   assert.equal(state.games[0].opponent, "Comets");
   assert.equal(state.games[0].fieldLocation.code, "2A");
   assert.deepEqual(state.games[0].fieldLocation.mapAsset.position, { xPercent: 40, yPercent: 60 });
+  assert.deepEqual({ date: state.games[0].gameMapFeed.date, fieldCode: state.games[0].gameMapFeed.fieldCode, home: state.games[0].gameMapFeed.homeTeamName, away: state.games[0].gameMapFeed.awayTeamName }, {
+    date: "2026-09-12", fieldCode: "2A", home: "Brahma", away: "Comets",
+  });
 });
 
 test("coach RSVP roster summarizes every active player consistently", () => {

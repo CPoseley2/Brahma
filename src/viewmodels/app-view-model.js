@@ -2,7 +2,7 @@ import { todayIso, uid } from "../shared/format.js";
 import { rosterIdentity } from "../import/roster-importer.js";
 import { scheduleDates } from "../shared/recurrence.js";
 import { drillLibrary, seasonPlan } from "../data/season-playbook.js";
-import { eventWithField } from "../shared/field-location.js";
+import { eventWithField, gameEventMapFeed } from "../shared/field-location.js";
 
 export class AppViewModel extends EventTarget {
   constructor(model, identity = null, services = {}) {
@@ -550,14 +550,14 @@ export class AppViewModel extends EventTarget {
     if (scope === "series" && draft.seriesId) return this.#replaceEventSeries(draft, dates);
     if (draft.scheduleMode === "weekly" && !existingId) return this.#createEventSeries(draft, dates);
     const existing = this.state.games.find(event => event.id === existingId);
-    const event = { ...existing, ...this.#eventFields(draft), id: existingId || uid("event"), date: draft.date };
+    const event = { ...existing, ...this.#eventFields(draft, draft.date), id: existingId || uid("event"), date: draft.date };
     await this.model.upsert("games", event); this.upsertLocal("games", event); this.changed();
     return { count: 1, message: `${event.type} on ${event.date} was saved.` };
   }
   async #createEventSeries(draft, dates) {
     const seriesId = uid("series");
     const events = dates.map(date => ({
-      ...this.#eventFields(draft), id: uid("event"), date, occurrenceDate: date, seriesId,
+      ...this.#eventFields(draft, date), id: uid("event"), date, occurrenceDate: date, seriesId,
       seriesStartDate: draft.seriesStartDate, seriesEndDate: draft.seriesEndDate, seriesWeekdays: draft.seriesWeekdays,
     }));
     await this.model.saveEvents(events); this.changed();
@@ -567,14 +567,14 @@ export class AppViewModel extends EventTarget {
     const existing = this.state.games.filter(event => event.seriesId === draft.seriesId);
     const byOccurrence = new Map(existing.map(event => [event.occurrenceDate || event.date, event]));
     const events = dates.map(date => ({
-      ...byOccurrence.get(date), ...this.#eventFields(draft), id: byOccurrence.get(date)?.id || uid("event"),
+      ...byOccurrence.get(date), ...this.#eventFields(draft, date), id: byOccurrence.get(date)?.id || uid("event"),
       date, occurrenceDate: date, seriesId: draft.seriesId,
       seriesStartDate: draft.seriesStartDate, seriesEndDate: draft.seriesEndDate, seriesWeekdays: draft.seriesWeekdays,
     }));
     await this.model.replaceEventSeries(draft.seriesId, events); this.changed();
     return { count: events.length, message: `Updated the full series. It now contains ${events.length} events.` };
   }
-  #eventFields(draft) {
+  #eventFields(draft, date = draft.date) {
     const competitive = ["game", "scrimmage", "jamboree"].includes(String(draft.type).toLowerCase());
     const gameDetails = competitive ? {
       homeTeamName: draft.gameDetails?.homeTeamName?.trim() || this.state.team?.name || "",
@@ -583,12 +583,17 @@ export class AppViewModel extends EventTarget {
       homeCoachName: draft.gameDetails?.homeCoachName?.trim() || "",
       awayCoachName: draft.gameDetails?.awayCoachName?.trim() || "",
     } : null;
-    return {
+    const assignment = eventWithField(draft, this.state.fields || [], this.state.fieldMapAssets || []);
+    const event = {
       type: draft.type, status: draft.status, time: draft.time,
       opponent: competitive ? gameDetails.awayTeamName : draft.opponent,
       gameDetails,
-      ...eventWithField(draft, this.state.fields || [], this.state.fieldMapAssets || []),
+      ...assignment,
       notes: draft.notes, slotCapacity: Number(draft.slotCapacity || 0),
+    };
+    return {
+      ...event,
+      gameMapFeed: competitive ? gameEventMapFeed({ ...draft, ...event, date }, this.state.team || {}, this.state.fields || [], this.state.fieldMapAssets || []) : null,
     };
   }
   upsertLocal(collection, item) {

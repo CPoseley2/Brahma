@@ -171,7 +171,9 @@ The published family schedule is locked. Administrators duplicate it or create a
 
 The field directory is the authoritative game-day image archive. Club administrators manage each stable field code, original PNG/PDF, preview image, field hotspot, arrival notes, parking guidance, address, and operational status. Signed-in coaches and parents can read the archive, but only club administrators can change it.
 
-Coaches choose an archived field when creating a game, practice, scrimmage, or jamboree. For games, scrimmages, and jamborees they also enter a `gameDetails` object containing the home and away team names, age group, and home and away coaches. The event stores both the field reference and a publication snapshot. The **Field Archive** view resolves the stable code (for example, `P1`) to a hotspot, then places the scheduled matchup, date, time, age group, and coach information over the venue’s archival image. The app does not embed a third-party map provider.
+The 2026 archive contains Phoenix Park, Dewey Elementary North, Dewey Elementary South, Carnegie Middle, Orangevale Open, Legette Elementary, and Northridge Elementary. The web previews are cropped to the aerial panel, while each original club PDF remains available. Orangevale O2 is deliberately excluded because the source marks it as unavailable for FOSC use.
+
+Coaches choose an archived field when creating a game, practice, scrimmage, or jamboree. For games, scrimmages, and jamborees they also enter a `gameDetails` object containing the home and away team names, age group, and home and away coaches. The event stores both the field reference and a publication snapshot. The **Field Archive** view resolves the stable code (for example, `P1` or `C2-S`) to a hotspot, then places the scheduled matchup, date, time, age group, and coach information over the venue’s archival image. Legacy scheduled games can also resolve a field from their stable field code or a location string containing that code. The app does not embed a third-party map provider.
 
 The field map payload is deliberately split by responsibility:
 
@@ -179,7 +181,10 @@ The field map payload is deliberately split by responsibility:
 - `event.date` / `event.time`: the canonical game date and start time.
 - `event.fieldId`: the live reference to the club field directory.
 - `event.fieldLocation`: the publication snapshot, including field code and `mapAsset`.
+- `event.gameMapFeed`: the versioned, automatically generated map payload containing confirmation state, date/time, teams, age group, coaches, field code, location, and map asset ID.
 - `field.mapAsset`: original URL, content type, optional PDF preview URL/page, and `{ xPercent, yPercent }` marker position.
+
+An authorized Firebase operator can publish every bundled archive and field record with `FIREBASE_ACCESS_TOKEN="$(gcloud auth print-access-token)" npm run seed:field-maps`.
 
 ### Planning scenarios
 
