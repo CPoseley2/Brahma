@@ -109,7 +109,7 @@ export class AdminViewModel extends EventTarget {
       ...scenario,
       practices: scenario.practices.map(practice => {
         const field = this.field(practice.fieldId);
-        return field ? { ...practice, location: field.name, fieldLocation: fieldSnapshot(field) } : practice;
+        return field ? { ...practice, location: field.name, fieldLocation: fieldSnapshot(field, this.state.fieldMapAssets || []) } : practice;
       }),
     };
     await this.model.publishScenario(publishable); this.changed(); return publishable;
@@ -117,11 +117,8 @@ export class AdminViewModel extends EventTarget {
   async saveField(fields) {
     const existing = fields.id ? this.field(fields.id) : null;
     if (!fields.name.trim() || !fields.code.trim() || !fields.park.trim()) throw new Error("Field name, field code, and park or school are required.");
-    const latitude = fields.latitude === "" ? null : Number(fields.latitude); const longitude = fields.longitude === "" ? null : Number(fields.longitude);
-    if ((latitude === null) !== (longitude === null)) throw new Error("Enter both latitude and longitude for the exact game pin.");
-    if (latitude !== null && (!Number.isFinite(latitude) || latitude < -90 || latitude > 90 || !Number.isFinite(longitude) || longitude < -180 || longitude > 180)) throw new Error("Enter a valid latitude from -90 to 90 and longitude from -180 to 180.");
     const mapUrl = fields.mapUrl.trim(); const previewUrl = fields.mapPreviewUrl.trim();
-    if ([mapUrl, previewUrl].some(url => url && !/^https:\/\//i.test(url))) throw new Error("Venue map URLs must begin with https://");
+    if ([mapUrl, previewUrl].some(url => url && !/^(?:https:\/\/|\/)/i.test(url))) throw new Error("Archive URLs must use https:// or a site-relative /field-maps/ path.");
     const xPercent = fields.mapXPercent === "" ? null : Number(fields.mapXPercent); const yPercent = fields.mapYPercent === "" ? null : Number(fields.mapYPercent);
     if ((xPercent === null) !== (yPercent === null)) throw new Error("Enter both X and Y percentages for the field marker.");
     if ([xPercent, yPercent].some(value => value !== null && (!Number.isFinite(value) || value < 0 || value > 100))) throw new Error("Field marker percentages must be from 0 to 100.");
@@ -133,7 +130,7 @@ export class AdminViewModel extends EventTarget {
     } : null;
     const value = {
       ...existing, id: existing?.id || uid("field"), name: fields.name.trim(), code: fields.code.trim(), park: fields.park.trim(), address: fields.address.trim(),
-      latitude, longitude, arrivalLabel: fields.arrivalLabel.trim(), arrivalInstructions: fields.arrivalInstructions.trim(), parking: fields.parking.trim(),
+      latitude: existing?.latitude ?? null, longitude: existing?.longitude ?? null, arrivalLabel: fields.arrivalLabel.trim(), arrivalInstructions: fields.arrivalInstructions.trim(), parking: fields.parking.trim(),
       mapAsset, status: fields.status, lights: fields.lights, notes: fields.notes.trim(), updatedAt: new Date().toISOString(),
     };
     await this.model.saveField(value); this.changed(); return value;

@@ -1,5 +1,6 @@
 import { clone } from "../shared/format.js";
 import { createAdminDemoData, createBudgetItems, createGearItems } from "../admin/demo-data.js";
+import { fieldMapArchives } from "../data/field-map-archives.js";
 
 const STORAGE_KEY = "fairOaksSoccer.adminMvp.v6";
 
@@ -9,6 +10,7 @@ export class AdminWorkspaceModel {
     try { this.state = JSON.parse(storage.getItem(STORAGE_KEY)) || createAdminDemoData(); }
     catch { this.state = createAdminDemoData(); }
     this.state.budgetItems ||= createBudgetItems();
+    this.state.fieldMapAssets ||= clone(fieldMapArchives);
     this.state.gearItems ||= createGearItems(); this.state.gearDistributions ||= [];
   }
   #persist() { this.storage.setItem(STORAGE_KEY, JSON.stringify(this.state)); }

@@ -17,6 +17,7 @@ async function seed() {
     await setDoc(doc(db, `teams/${teamId}`), { name: "Fair Oaks Soccer Club U6" });
     await setDoc(doc(db, "clubAdmins/admin"), { email: "admin@example.com", active: true });
     await setDoc(doc(db, "fields/field-two"), { name: "Field 2", latitude: 38.644123, longitude: -121.271234 });
+    await setDoc(doc(db, "fieldMapAssets/phoenix-park-2026"), { name: "Phoenix Park Map Asset", previewUrl: "/field-maps/phoenix-park-2026.png" });
     await setDoc(doc(db, path("members/coach")), { role: "headCoach", familyId: null, active: true, email: "coach@example.com" });
     await setDoc(doc(db, path("members/assistant")), { role: "assistantCoach", familyId: null, active: true, email: "assistant@example.com" });
     await setDoc(doc(db, path("members/guardian-a")), { role: "guardian", familyId: "family-a", active: true, email: "a@example.com" });
@@ -86,6 +87,8 @@ describe("team privacy", () => {
     await assertSucceeds(getDoc(doc(auth("coach", "coach@example.com"), "fields/field-two")));
     await assertSucceeds(getDoc(doc(auth("guardian-a", "a@example.com"), "fields/field-two")));
     await assertFails(getDoc(doc(environment.unauthenticatedContext().firestore(), "fields/field-two")));
+    await assertSucceeds(getDoc(doc(auth("guardian-a", "a@example.com"), "fieldMapAssets/phoenix-park-2026")));
+    await assertFails(getDoc(doc(environment.unauthenticatedContext().firestore(), "fieldMapAssets/phoenix-park-2026")));
   });
   test("a legacy parent can complete every Firestore read used during startup", async () => {
     const db = auth("legacy-parent", "legacy@example.com");
@@ -100,6 +103,7 @@ describe("team privacy", () => {
     await assertSucceeds(getDoc(doc(db, path("events/event-1/rsvps/player-a"))));
     await assertSucceeds(getDocs(collection(db, path("events/event-1/slots"))));
     await assertSucceeds(getDocs(collection(db, "fields")));
+    await assertSucceeds(getDocs(collection(db, "fieldMapAssets")));
   });
   test("guardians can read team broadcasts", async () => assertSucceeds(getDoc(doc(auth("guardian-a", "a@example.com"), path("broadcasts/broadcast-1")))));
   test("members can list team broadcasts", async () => {
@@ -139,6 +143,7 @@ describe("authorized writes", () => {
     const adminDb = auth("admin", "admin@example.com");
     await assertSucceeds(getDocs(collection(adminDb, "teams")));
     await assertSucceeds(setDoc(doc(adminDb, "fields/new-field"), { name: "New Field", status: "Open" }));
+    await assertSucceeds(setDoc(doc(adminDb, "fieldMapAssets/new-map"), { name: "New map", previewUrl: "/field-maps/new.png" }));
     await assertSucceeds(setDoc(doc(adminDb, "budgetItems/field-permits"), { name: "Field permits", type: "Expense", planned: 50000 }));
     await assertSucceeds(setDoc(doc(adminDb, "gearItems/balls"), { name: "Soccer balls", vendor: "Amazon", orderedQty: 200 }));
     await assertSucceeds(setDoc(doc(adminDb, "gearDistributions/team-a"), { teamId: "team-a", status: "Ready" }));
@@ -147,6 +152,7 @@ describe("authorized writes", () => {
     await assertSucceeds(setDoc(doc(adminDb, path("players/admin-player")), { firstName: "Admin", familyId: null }));
     await assertFails(getDocs(collection(auth("guardian-a", "a@example.com"), "teams")));
     await assertFails(setDoc(doc(auth("coach", "coach@example.com"), "fields/blocked"), { name: "Blocked" }));
+    await assertFails(setDoc(doc(auth("coach", "coach@example.com"), "fieldMapAssets/blocked"), { name: "Blocked" }));
     await assertFails(setDoc(doc(auth("coach", "coach@example.com"), "budgetItems/blocked"), { name: "Blocked", type: "Expense" }));
     await assertFails(setDoc(doc(auth("coach", "coach@example.com"), "gearItems/blocked"), { name: "Blocked" }));
     await assertFails(setDoc(doc(auth("coach", "coach@example.com"), "gearDistributions/blocked"), { teamId: "team-a" }));

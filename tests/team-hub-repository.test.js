@@ -30,6 +30,7 @@ test("legacy parent roles use the guardian-safe data path", async () => {
       const collection = model.collectionPath({ teamId: "fair-oaks-u6", ...context });
       fetchedCollections.push(collection);
       if (collection === "fields") return [{ id: "field-two", name: "Field 2", latitude: 38.6, longitude: -121.2 }];
+      if (collection === "fieldMapAssets") return [{ id: "phoenix-park-2026", name: "Phoenix Park Map Asset" }];
       if (collection.endsWith("/events")) return [];
       return [];
     },
@@ -43,6 +44,7 @@ test("legacy parent roles use the guardian-safe data path", async () => {
   const result = await repository.loadTeamHub({ role: "parent", familyId: "family-a", active: true });
   assert.deepEqual(result.players.map(player => player.id), ["player-a"]);
   assert.deepEqual(result.fields.map(field => field.id), ["field-two"]);
+  assert.deepEqual(result.fieldMapAssets.map(asset => asset.id), ["phoenix-park-2026"]);
   assert.ok(!fetchedCollections.some(path => path.endsWith("/members")));
   assert.ok(!fetchedCollections.some(path => path.endsWith("/sessions")));
   assert.ok(!fetchedCollections.some(path => path.endsWith("/drillCards")));

@@ -14,6 +14,7 @@ export const teamModels = {
   clubAdmin: defineFirestoreModel({ collectionPath: () => "clubAdmins" }),
   coach: defineFirestoreModel({ collectionPath: () => "coaches" }),
   field: defineFirestoreModel({ collectionPath: () => "fields" }),
+  fieldMapAsset: defineFirestoreModel({ collectionPath: () => "fieldMapAssets" }),
   budgetItem: defineFirestoreModel({ collectionPath: () => "budgetItems" }),
   gearItem: defineFirestoreModel({ collectionPath: () => "gearItems" }),
   gearDistribution: defineFirestoreModel({ collectionPath: () => "gearDistributions" }),

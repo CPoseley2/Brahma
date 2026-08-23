@@ -58,9 +58,10 @@ export class TeamHubRepository {
     const messageRequest = isCoach ? this.firestore.fetchAll(teamModels.message, this.context) : this.#loadGuardianMessages(membership);
     const memberRequest = isCoach ? this.firestore.fetchAll(teamModels.member, this.context) : Promise.resolve([]);
     const inviteRequest = isCoach ? this.firestore.fetchAll(teamModels.invite, this.context) : Promise.resolve([]);
-    const [team, fields, families, guardians, members, invites, players, games, sessions, volunteerSlots, broadcasts, messages, drillCards, documents] = await Promise.all([
+    const [team, fields, fieldMapAssets, families, guardians, members, invites, players, games, sessions, volunteerSlots, broadcasts, messages, drillCards, documents] = await Promise.all([
       this.firestore.fetch(teamModels.team, this.teamId),
       this.firestore.fetchAll(teamModels.field),
+      this.firestore.fetchAll(teamModels.fieldMapAsset),
       familyRequest, guardianRequest, memberRequest, inviteRequest, playerRequest,
       this.firestore.fetchAll(teamModels.event, this.context),
       isCoach ? this.firestore.fetchAll(teamModels.session, this.context) : Promise.resolve([]),
@@ -87,7 +88,7 @@ export class TeamHubRepository {
     const eventSlots = (await Promise.all(games.map(async event => (
       await this.firestore.fetchAll(teamModels.eventSlot, { ...this.context, eventId: event.id })
     ).map(slot => ({ ...slot, eventId: event.id }))))).flat();
-    return { version: 9, team, fields, families, guardians, members, invites, players, games, eventSlots, sessions, volunteerSlots, observations, rsvps, broadcasts, messages, drillCards, documents, skillFramework: team.skillFramework || [] };
+    return { version: 10, team, fields, fieldMapAssets, families, guardians, members, invites, players, games, eventSlots, sessions, volunteerSlots, observations, rsvps, broadcasts, messages, drillCards, documents, skillFramework: team.skillFramework || [] };
   }
   async #loadGuardianPlayers(membership) {
     const values = [];

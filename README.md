@@ -167,11 +167,11 @@ Club administrators land on a season-readiness command center rather than a week
 
 The published family schedule is locked. Administrators duplicate it or create a scenario before modeling changes, so normal preseason planning and weather contingencies cannot accidentally alter the live season. The admin demo contains 100 synthetic teams, 20 school and park fields, two weekly practices per team, and five comparison scenarios.
 
-### Trusted field maps
+### Archival field maps
 
-The field directory is the authoritative game-day map repository. Club administrators manage each field's code, exact latitude/longitude pin, venue diagram, marker position, arrival-point label, final walking instructions, parking guidance, address, and operational status. A diagram can be a PNG/image or a PDF; PDF records can include a rendered preview image so percentage-based marker placement remains consistent across browsers. Signed-in coaches and parents can read the repository, but only club administrators can change it.
+The field directory is the authoritative game-day image archive. Club administrators manage each stable field code, original PNG/PDF, preview image, field hotspot, arrival notes, parking guidance, address, and operational status. Signed-in coaches and parents can read the archive, but only club administrators can change it.
 
-Coaches choose a trusted field when creating a game, practice, scrimmage, or jamboree. For games, scrimmages, and jamborees they also enter a `gameDetails` object containing the home and away team names, age group, and home and away coaches. The event stores both the field reference and a publication snapshot of its map details. The coach **Field Maps** view combines those schedule facts with the field snapshot and places a game card plus “your field” marker over the venue diagram. Parent and coach schedules continue to show one-tap Google Maps and Apple Maps directions. Legacy free-text locations continue to work with address-based directions but are clearly marked as unverified until an administrator adds an exact pin.
+Coaches choose an archived field when creating a game, practice, scrimmage, or jamboree. For games, scrimmages, and jamborees they also enter a `gameDetails` object containing the home and away team names, age group, and home and away coaches. The event stores both the field reference and a publication snapshot. The **Field Archive** view resolves the stable code (for example, `P1`) to a hotspot, then places the scheduled matchup, date, time, age group, and coach information over the venue’s archival image. The app does not embed a third-party map provider.
 
 The field map payload is deliberately split by responsibility:
 

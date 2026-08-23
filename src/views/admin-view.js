@@ -4,7 +4,7 @@ import { BUDGET_CATEGORIES, budgetCategorySummary, budgetSummary, compareScenari
 import { gearDistributionSummary, gearOrderSummary, gearPlan, normalizeGearPlayerCount, scaledGearBudget } from "../admin/gear-domain.js";
 import { escapeHtml, formatDate, formatDateTime, formatTime, todayIso } from "../shared/format.js";
 import { AdminScheduleImportView } from "./admin-schedule-import-view.js";
-import { hasExactPin, hasFieldMap, locationLinks } from "../shared/field-location.js";
+import { fieldMapAsset, hasFieldMap } from "../shared/field-location.js";
 
 const empty = message => `<div class="empty-state">${escapeHtml(message)}</div>`;
 const initials = name => String(name || "?").split(/\s+/).slice(0, 2).map(part => part[0]).join("").toUpperCase();
@@ -154,10 +154,11 @@ export class AdminView {
   #openField(field = null) {
     const dialog = this.root.querySelector("#adminFieldDialog"); const form = dialog.querySelector("form"); form.reset();
     this.root.querySelector("#adminFieldDialogTitle").textContent = field ? "Edit field" : "Add field";
-    ["id", "name", "code", "park", "address", "latitude", "longitude", "arrivalLabel", "arrivalInstructions", "parking", "status", "notes"].forEach(name => { form.elements[name].value = field?.[name] ?? (name === "status" ? "Open" : ""); });
-    form.elements.mapUrl.value = field?.mapAsset?.url || ""; form.elements.mapContentType.value = field?.mapAsset?.contentType || "image/png";
-    form.elements.mapPage.value = field?.mapAsset?.page || 1; form.elements.mapPreviewUrl.value = field?.mapAsset?.previewUrl || "";
-    form.elements.mapXPercent.value = field?.mapAsset?.position?.xPercent ?? ""; form.elements.mapYPercent.value = field?.mapAsset?.position?.yPercent ?? "";
+    ["id", "name", "code", "park", "address", "arrivalLabel", "arrivalInstructions", "parking", "status", "notes"].forEach(name => { form.elements[name].value = field?.[name] ?? (name === "status" ? "Open" : ""); });
+    const asset = fieldMapAsset(field || {}, this.vm.state.fieldMapAssets || []);
+    form.elements.mapUrl.value = asset?.url || ""; form.elements.mapContentType.value = asset?.contentType || "image/png";
+    form.elements.mapPage.value = asset?.page || 1; form.elements.mapPreviewUrl.value = asset?.previewUrl || "";
+    form.elements.mapXPercent.value = asset?.position?.xPercent ?? ""; form.elements.mapYPercent.value = asset?.position?.yPercent ?? "";
     form.elements.lights.checked = Boolean(field?.lights); dialog.showModal();
   }
   #openBudgetItem(item = null) {
@@ -206,7 +207,7 @@ export class AdminView {
   }
   async #saveField(event) {
     event.preventDefault(); const form = event.currentTarget;
-    await this.#submit(event.submitter, () => this.vm.saveField({ id: formValue(form, "id"), name: formValue(form, "name"), code: formValue(form, "code"), park: formValue(form, "park"), address: formValue(form, "address"), latitude: formValue(form, "latitude"), longitude: formValue(form, "longitude"), mapUrl: formValue(form, "mapUrl"), mapContentType: formValue(form, "mapContentType"), mapPage: formValue(form, "mapPage"), mapPreviewUrl: formValue(form, "mapPreviewUrl"), mapXPercent: formValue(form, "mapXPercent"), mapYPercent: formValue(form, "mapYPercent"), arrivalLabel: formValue(form, "arrivalLabel"), arrivalInstructions: formValue(form, "arrivalInstructions"), parking: formValue(form, "parking"), status: formValue(form, "status"), lights: form.elements.lights.checked, notes: formValue(form, "notes") }), "Field map saved.", form.closest("dialog"));
+    await this.#submit(event.submitter, () => this.vm.saveField({ id: formValue(form, "id"), name: formValue(form, "name"), code: formValue(form, "code"), park: formValue(form, "park"), address: formValue(form, "address"), mapUrl: formValue(form, "mapUrl"), mapContentType: formValue(form, "mapContentType"), mapPage: formValue(form, "mapPage"), mapPreviewUrl: formValue(form, "mapPreviewUrl"), mapXPercent: formValue(form, "mapXPercent"), mapYPercent: formValue(form, "mapYPercent"), arrivalLabel: formValue(form, "arrivalLabel"), arrivalInstructions: formValue(form, "arrivalInstructions"), parking: formValue(form, "parking"), status: formValue(form, "status"), lights: form.elements.lights.checked, notes: formValue(form, "notes") }), "Field archive saved.", form.closest("dialog"));
   }
   async #saveBudgetItem(event) {
     event.preventDefault(); const form = event.currentTarget;
@@ -337,8 +338,8 @@ export class AdminView {
       }).join("") || `<button class="admin-calendar-empty" data-admin-action="new-practice" data-date="${date}">+ Add practice</button>`}</div></section>`;
     }).join("");
     this.root.querySelector("#adminFieldDirectory").innerHTML = this.vm.state.fields.map(field => {
-      const links = locationLinks(field); const ready = hasExactPin(field); const diagramReady = hasFieldMap(field);
-      return `<article><div><strong>${escapeHtml(field.name)}${field.code ? ` · Field ${escapeHtml(field.code)}` : ""}</strong><span>${escapeHtml(field.address || field.park)}</span><small>${escapeHtml(field.arrivalLabel || (ready ? "Exact field pin saved" : "Exact field pin needed"))}</small></div><div><span class="badge ${field.status === "Open" ? "blue" : "gold"}">${escapeHtml(field.status)}</span><span class="badge ${ready ? "blue" : "gold"}">${ready ? "Directions ready" : "Needs pin"}</span><span class="badge ${diagramReady ? "blue" : "gold"}">${diagramReady ? "Diagram ready" : "Needs diagram"}</span>${field.lights ? `<span class="badge">Lights</span>` : ""}${links ? `<a class="button small" href="${escapeHtml(links.map)}" target="_blank" rel="noopener noreferrer">Open map</a>` : ""}<button class="button small" data-admin-action="edit-field" data-id="${field.id}">Edit</button></div></article>`;
+      const asset = fieldMapAsset(field, this.vm.state.fieldMapAssets || []); const diagramReady = hasFieldMap(field, this.vm.state.fieldMapAssets || []);
+      return `<article><div><strong>${escapeHtml(field.name)}${field.code ? ` · Field ${escapeHtml(field.code)}` : ""}</strong><span>${escapeHtml(field.address || field.park)}</span><small>${escapeHtml(asset?.sourceLabel || field.arrivalLabel || "Archival image needed")}</small></div><div><span class="badge ${field.status === "Open" ? "blue" : "gold"}">${escapeHtml(field.status)}</span><span class="badge ${diagramReady ? "blue" : "gold"}">${diagramReady ? "Archive ready" : "Needs archive"}</span>${field.lights ? `<span class="badge">Lights</span>` : ""}${asset ? `<a class="button small" href="${escapeHtml(asset.previewUrl || asset.url)}" target="_blank" rel="noopener noreferrer">Open image</a>` : ""}<button class="button small" data-admin-action="edit-field" data-id="${field.id}">Edit</button></div></article>`;
     }).join("") || empty("No fields have been added.");
   }
   #renderBudget() {

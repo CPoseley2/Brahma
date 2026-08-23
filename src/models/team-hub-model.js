@@ -1,5 +1,6 @@
 import seed from "../../team-data.json";
 import { clone } from "../shared/format.js";
+import { fieldMapArchives } from "../data/field-map-archives.js";
 
 const CURRENT_KEY = "fairOaksU6TeamHub.v2";
 const LEGACY_KEY = "fairOaksU6TeamHub.v1";
@@ -15,7 +16,7 @@ export class TeamHubModel {
     const normalized = {
       ...clone(this.seed), ...value,
       team: { ...this.seed.team, ...(value.team || {}) },
-      fields: value.fields || [], players: value.players || [], games: value.games || [], eventSlots: value.eventSlots || [],
+      fields: value.fields || [], fieldMapAssets: value.fieldMapAssets || clone(fieldMapArchives), players: value.players || [], games: value.games || [], eventSlots: value.eventSlots || [],
       volunteerSlots: value.volunteerSlots || [], sessions: value.sessions || [],
       observations: value.observations || [], rsvps: value.rsvps || [],
       broadcasts: value.broadcasts || [], messages: value.messages || [],

@@ -1,3 +1,5 @@
+import { archiveMapAssetFor } from "../data/field-map-archives.js";
+
 const coordinate = value => {
   const number = Number(value);
   return Number.isFinite(number) ? number : null;
@@ -14,6 +16,21 @@ const percent = value => {
   return Number.isFinite(number) && number >= 0 && number <= 100 ? number : null;
 };
 
+const regionPosition = position => {
+  const xPercent = percent(position?.xPercent);
+  const yPercent = percent(position?.yPercent);
+  if (xPercent === null || yPercent === null) return null;
+  const widthPercent = percent(position.widthPercent);
+  const heightPercent = percent(position.heightPercent);
+  return {
+    xPercent, yPercent,
+    ...(widthPercent === null ? {} : { widthPercent }),
+    ...(heightPercent === null ? {} : { heightPercent }),
+    ...(position.rotation === undefined || !Number.isFinite(Number(position.rotation)) ? {} : { rotation: Number(position.rotation) }),
+    ...(position.labelPlacement ? { labelPlacement: position.labelPlacement === "above" ? "above" : "below" } : {}),
+  };
+};
+
 const mapContentType = (value = "", url = "") => {
   const type = String(value || "").toLowerCase();
   if (type === "application/pdf" || type === "pdf") return "application/pdf";
@@ -21,30 +38,35 @@ const mapContentType = (value = "", url = "") => {
   return /\.pdf(?:$|[?#])/i.test(url) ? "application/pdf" : "image/*";
 };
 
-export function fieldMapAsset(field = {}) {
+export function fieldMapAsset(field = {}, archives = []) {
   const source = field.mapAsset || {};
+  const archiveAsset = archiveMapAssetFor(field, archives.length ? archives : undefined);
+  if (archiveAsset) return archiveAsset;
   const url = String(source.url || field.mapUrl || "").trim();
   if (!url) return null;
   const previewUrl = String(source.previewUrl || field.mapPreviewUrl || "").trim();
   const position = source.position || field.mapPosition || {};
-  const xPercent = percent(position.xPercent ?? field.mapXPercent);
-  const yPercent = percent(position.yPercent ?? field.mapYPercent);
+  const normalizedPosition = regionPosition({ ...position, xPercent: position.xPercent ?? field.mapXPercent, yPercent: position.yPercent ?? field.mapYPercent });
   return {
     url,
     previewUrl,
     contentType: mapContentType(source.contentType || field.mapContentType, url),
     page: Math.max(1, Number(source.page || 1)),
-    position: xPercent === null || yPercent === null ? null : { xPercent, yPercent },
+    position: normalizedPosition,
     alt: String(source.alt || `${field.park || field.name || "Venue"} field map`).trim(),
+    archiveId: String(source.archiveId || field.archiveId || "").trim(),
+    season: Number(source.season) || null,
+    sourceLabel: String(source.sourceLabel || "Club field archive").trim(),
+    fieldCode: String(source.fieldCode || field.code || field.fieldCode || "").trim(),
   };
 }
 
-export function hasFieldMap(field = {}) {
-  const asset = fieldMapAsset(field);
+export function hasFieldMap(field = {}, archives = []) {
+  const asset = fieldMapAsset(field, archives);
   return Boolean(asset?.url && asset.position);
 }
 
-export function fieldSnapshot(field = {}) {
+export function fieldSnapshot(field = {}, archives = []) {
   if (!field?.id) return null;
   return {
     id: field.id,
@@ -57,7 +79,8 @@ export function fieldSnapshot(field = {}) {
     arrivalLabel: field.arrivalLabel || "",
     arrivalInstructions: field.arrivalInstructions || "",
     parking: field.parking || "",
-    mapAsset: fieldMapAsset(field),
+    mapAssetId: field.mapAssetId || field.mapAsset?.archiveId || "",
+    mapAsset: fieldMapAsset(field, archives),
   };
 }
 
@@ -80,7 +103,7 @@ export function locationForEvent(event = {}, fields = []) {
 
 const ageGroupFromTeam = team => team?.ageGroup || team?.division || String(team?.name || "").match(/\bU\d+\b/i)?.[0]?.toUpperCase() || "";
 
-export function gameMapDetails(event = {}, team = {}, fields = []) {
+export function gameMapDetails(event = {}, team = {}, fields = [], archives = []) {
   const location = locationForEvent(event, fields);
   const details = event.gameDetails || {};
   return {
@@ -94,33 +117,13 @@ export function gameMapDetails(event = {}, team = {}, fields = []) {
     locationName: location?.park || location?.name || event.location || "Location TBD",
     fieldCode: location?.code || event.fieldCode || location?.name || "Field TBD",
     location,
-    mapAsset: fieldMapAsset(location || {}),
+    mapAsset: fieldMapAsset(location || {}, archives),
   };
 }
 
-export function mapTarget(location = {}) {
-  const target = hasExactPin(location)
-    ? `${Number(location.latitude)},${Number(location.longitude)}`
-    : location.address || [location.name, location.park].filter(Boolean).join(", ");
-  return /^(?:location\s+)?tbd$/i.test(String(target).trim()) ? "" : target;
-}
-
-export function locationLinks(location = {}) {
-  const target = mapTarget(location);
-  if (!target) return null;
-  const encoded = encodeURIComponent(target);
-  return {
-    target,
-    directions: `https://www.google.com/maps/dir/?api=1&destination=${encoded}&travelmode=driving`,
-    appleMaps: `https://maps.apple.com/?daddr=${encoded}&dirflg=d`,
-    map: `https://www.google.com/maps/search/?api=1&query=${encoded}`,
-    embed: `https://www.google.com/maps?q=${encoded}&z=18&output=embed`,
-  };
-}
-
-export function eventWithField(draft, fields = []) {
+export function eventWithField(draft, fields = [], archives = []) {
   const field = fields.find(item => item.id === draft.fieldId);
   return field
-    ? { fieldId: field.id, location: field.name, fieldLocation: fieldSnapshot(field) }
+    ? { fieldId: field.id, location: field.name, fieldLocation: fieldSnapshot(field, archives) }
     : { fieldId: "", location: draft.location || "", fieldLocation: null };
 }

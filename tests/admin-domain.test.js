@@ -40,6 +40,7 @@ test("admin demo models a full club scheduling operation", () => {
   assert.equal(state.players.length, 1200);
   assert.ok(state.teams.every(team => state.players.filter(player => player.teamId === team.id).length === 12));
   assert.equal(state.fields.length, 20);
+  assert.equal(state.fieldMapAssets[0].id, "phoenix-park-2026");
   assert.equal(state.practices.length, 200);
   assert.equal(state.scenarios.length, 5);
   assert.equal(state.budgetItems.length, 12);

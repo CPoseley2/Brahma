@@ -1,4 +1,5 @@
 import { addDays, PRACTICE_START_TIMES, practicesOverlap, startOfWeek } from "./admin-domain.js";
+import { fieldMapArchives } from "../data/field-map-archives.js";
 
 const FIELD_SEEDS = [
   ["fair-oaks-north", "Fair Oaks Park · North", "Fair Oaks Park", "11549 Fair Oaks Blvd"],
@@ -19,8 +20,8 @@ const FIELD_SEEDS = [
   ["pershing-south", "Pershing Elementary · South", "Pershing Elementary", "9010 Pershing Ave"],
   ["del-campo-main", "Del Campo · Main", "Del Campo High School", "4925 Dewey Dr"],
   ["del-campo-practice", "Del Campo · Practice", "Del Campo High School", "4925 Dewey Dr"],
-  ["phoenix-east", "Phoenix Park · East", "Phoenix Park", "9050 Sunset Ave"],
-  ["phoenix-west", "Phoenix Park · West", "Phoenix Park", "9050 Sunset Ave"],
+  ["phoenix-east", "Phoenix Park · P1", "Phoenix Park", "9050 Sunset Ave"],
+  ["phoenix-west", "Phoenix Park · P2", "Phoenix Park", "9050 Sunset Ave"],
 ];
 
 const DIVISIONS = ["U6", "U7", "U8", "U9", "U10", "U11", "U12", "U14"];
@@ -75,6 +76,7 @@ export function createAdminDemoData() {
   const weekStart = startOfWeek(new Date());
   const fields = FIELD_SEEDS.map(([id, name, park, address], index) => ({
     id: `field-${id}`, name, code: name.split(" · ")[1] || String(index + 1), park, address, status: index === 17 ? "Permit pending" : "Open", lights: index >= 10 || index % 4 === 0,
+    mapAssetId: park === "Phoenix Park" ? "phoenix-park-2026" : "",
     latitude: 38.6352 + Math.floor(index / 5) * .0082 + (index % 2) * .00035,
     longitude: -121.2864 + (index % 5) * .0101 + (index % 2) * .0004,
     arrivalLabel: index % 2 ? "West touchline · blue field flag" : "North touchline · gold field flag",
@@ -137,7 +139,7 @@ export function createAdminDemoData() {
   ];
   const gearItems = createGearItems(); const gearDistributions = createGearDistributions(teams);
   return {
-    version: 5, club: { name: "Fair Oaks Soccer Club", season: "Fall 2026" }, teams, fields, coaches, players, practices: publishedPractices, scenarios, budgetItems: createBudgetItems(), gearItems, gearDistributions,
+    version: 6, club: { name: "Fair Oaks Soccer Club", season: "Fall 2026" }, teams, fields, fieldMapAssets: structuredClone(fieldMapArchives), coaches, players, practices: publishedPractices, scenarios, budgetItems: createBudgetItems(), gearItems, gearDistributions,
     broadcasts: [{ id: "welcome-admin", teamIds: teams.map(team => team.id), title: "Welcome to the fall season", body: "Schedules are live. Please confirm your team’s practice field in the app.", sentAt: new Date(Date.now() - 86400000).toISOString(), sentByLabel: "Club office" }],
   };
 }

@@ -1,18 +1,16 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { eventWithField, fieldMapAsset, fieldSnapshot, gameMapDetails, hasExactPin, hasFieldMap, locationForEvent, locationLinks } from "../src/shared/field-location.js";
+import { eventWithField, fieldMapAsset, fieldSnapshot, gameMapDetails, hasExactPin, hasFieldMap, locationForEvent } from "../src/shared/field-location.js";
+import { confirmedEventsAtArchive } from "../src/shared/field-map-explorer.js";
+import { fieldMapArchives } from "../src/data/field-map-archives.js";
 
 const field = {
   id: "field-two", name: "Fair Oaks Park · Field 2", park: "Fair Oaks Park", address: "11549 Fair Oaks Blvd, Fair Oaks, CA",
   latitude: 38.644123, longitude: -121.271234, arrivalLabel: "North touchline", arrivalInstructions: "Follow the gold flags.", parking: "Use the east lot.",
 };
 
-test("a trusted field produces an exact coordinate destination for map apps", () => {
+test("legacy exact coordinates remain valid data without creating map-provider links", () => {
   assert.equal(hasExactPin(field), true);
-  const links = locationLinks(field);
-  assert.match(links.directions, /destination=38\.644123%2C-121\.271234/);
-  assert.match(links.appleMaps, /daddr=38\.644123%2C-121\.271234/);
-  assert.match(links.embed, /output=embed/);
 });
 
 test("assigning a field snapshots the game-day location into the event", () => {
@@ -29,14 +27,38 @@ test("event locations use the live directory and fall back to their published sn
   assert.equal(locationForEvent(event, [{ ...field, arrivalLabel: "Corrected check-in point" }]).arrivalLabel, "Corrected check-in point");
 });
 
-test("legacy locations still open address-based directions", () => {
+test("legacy free-text locations remain readable without map-provider behavior", () => {
   const location = locationForEvent({ location: "Community Center", address: "123 Main St" }, []);
   assert.equal(hasExactPin(location), false);
-  assert.match(locationLinks(location).directions, /123%20Main%20St/);
+  assert.equal(location.address, "123 Main St");
 });
 
-test("TBD locations do not create misleading map links", () => {
-  assert.equal(locationLinks(locationForEvent({ location: "Location TBD" }, [])), null);
+test("Phoenix field codes resolve to the 2026 archival PNG and PDF", () => {
+  const phoenix = { id: "phoenix-p1", name: "Phoenix Park · P1", park: "Phoenix Park", code: "P1" };
+  const asset = fieldMapAsset(phoenix);
+  assert.equal(asset.previewUrl, "/field-maps/phoenix-park-2026.png");
+  assert.equal(asset.url, "/field-maps/phoenix-park-2026.pdf");
+  assert.equal(asset.archiveId, "phoenix-park-2026");
+  assert.deepEqual(asset.position, { x: 787, y: 374, xPercent: 62.76, yPercent: 29.82, widthPercent: 12.8, heightPercent: 16.3, rotation: -17, labelPlacement: "below" });
+  assert.equal(hasFieldMap(phoenix), true);
+});
+
+test("a scheduled Phoenix game inherits event facts on its field hotspot", () => {
+  const phoenix = { id: "phoenix-p2", name: "Phoenix Park · P2", park: "Phoenix Park", code: "P2" };
+  const event = { fieldId: phoenix.id, date: "2026-09-12", time: "09:30", gameDetails: { homeTeamName: "Brahma", awayTeamName: "Comets", ageGroup: "U6", homeCoachName: "Alex", awayCoachName: "Sam" } };
+  const details = gameMapDetails(event, {}, [phoenix]);
+  assert.deepEqual({ home: details.homeTeamName, away: details.awayTeamName, field: details.fieldCode, date: details.date, time: details.time }, { home: "Brahma", away: "Comets", field: "P2", date: "2026-09-12", time: "09:30" });
+  assert.deepEqual(details.mapAsset.position, { x: 521, y: 299, xPercent: 41.55, yPercent: 23.84, widthPercent: 10.4, heightPercent: 13.1, rotation: -7, labelPlacement: "below" });
+});
+
+test("the location picker receives every confirmed Phoenix date in chronological order", () => {
+  const fields = [{ id: "phoenix-p1", name: "Phoenix Park · P1", park: "Phoenix Park", code: "P1", mapAssetId: "phoenix-park-2026" }];
+  const events = [
+    { id: "later", fieldId: "phoenix-p1", status: "Scheduled", date: "2026-09-19", time: "10:00" },
+    { id: "canceled", fieldId: "phoenix-p1", status: "Canceled", date: "2026-09-05", time: "09:00" },
+    { id: "first", fieldId: "phoenix-p1", status: "Scheduled", date: "2026-09-12", time: "09:30" },
+  ];
+  assert.deepEqual(confirmedEventsAtArchive(events, fields, fieldMapArchives, "phoenix-park-2026").map(event => event.id), ["first", "later"]);
 });
 
 test("a field diagram uses normalized percentages and survives the event snapshot", () => {

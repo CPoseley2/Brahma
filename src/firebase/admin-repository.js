@@ -6,8 +6,8 @@ export class AdminRepository {
   fetchAdmin(uid) { return this.firestore.fetch(teamModels.clubAdmin, uid); }
 
   async loadWorkspace() {
-    const [rawTeams, fields, savedCoaches, scenarios, budgetItems, gearItems, gearDistributions] = await Promise.all([
-      this.firestore.fetchAll(teamModels.team), this.firestore.fetchAll(teamModels.field), this.firestore.fetchAll(teamModels.coach), this.firestore.fetchAll(teamModels.scheduleScenario), this.firestore.fetchAll(teamModels.budgetItem), this.firestore.fetchAll(teamModels.gearItem), this.firestore.fetchAll(teamModels.gearDistribution),
+    const [rawTeams, fields, fieldMapAssets, savedCoaches, scenarios, budgetItems, gearItems, gearDistributions] = await Promise.all([
+      this.firestore.fetchAll(teamModels.team), this.firestore.fetchAll(teamModels.field), this.firestore.fetchAll(teamModels.fieldMapAsset), this.firestore.fetchAll(teamModels.coach), this.firestore.fetchAll(teamModels.scheduleScenario), this.firestore.fetchAll(teamModels.budgetItem), this.firestore.fetchAll(teamModels.gearItem), this.firestore.fetchAll(teamModels.gearDistribution),
     ]);
     const teams = rawTeams.map(team => ({
       status: "Active", division: String(team.name || "").match(/\bU\d+\b/i)?.[0]?.toUpperCase() || "Unassigned",
@@ -49,7 +49,7 @@ export class AdminRepository {
       if (existing) existing.teamIds.push(item.teamIds[0]); else broadcastMap.set(key, item);
     });
     return {
-      version: 1, club: { name: "Fair Oaks Soccer Club", season: teams[0]?.season || "Current season" }, teams, fields, coaches,
+      version: 2, club: { name: "Fair Oaks Soccer Club", season: teams[0]?.season || "Current season" }, teams, fields, fieldMapAssets, coaches,
       players: bundles.flatMap(bundle => bundle.players), practices: bundles.flatMap(bundle => bundle.practices),
       members: bundles.flatMap(bundle => bundle.members), broadcasts: [...broadcastMap.values()], scenarios, budgetItems, gearItems, gearDistributions,
     };

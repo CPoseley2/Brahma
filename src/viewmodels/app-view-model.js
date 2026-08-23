@@ -27,7 +27,7 @@ export class AppViewModel extends EventTarget {
   get defaultRoute() { return this.role === "coach" ? "coach-dashboard" : "family-home"; }
   get navigation() {
     return this.role === "coach"
-      ? [["coach-dashboard", "Dashboard"], ["fields", "Field Maps"], ["messages", "Messages"], ["documents", "Docs"], ["development", "Player Development"], ["sessions", "Practices"], ["playbook", "Season Plan"], ["drills", "Drill Cards"], ["roster", "Roster"], ["schedule", "Schedule"], ["volunteers", "Volunteers"], ["standards", "Standards"], ["data-settings", "Data"]]
+      ? [["coach-dashboard", "Dashboard"], ["fields", "Field Archive"], ["messages", "Messages"], ["documents", "Docs"], ["development", "Player Development"], ["sessions", "Practices"], ["playbook", "Season Plan"], ["drills", "Drill Cards"], ["roster", "Roster"], ["schedule", "Schedule"], ["volunteers", "Volunteers"], ["standards", "Standards"], ["data-settings", "Data"]]
       : [["family-home", "Season Home"], ["fields", "Game-Day Map"], ["messages", "Messages"], ["documents", "Docs"], ["my-player", "Season Story"], ["schedule", "Schedule"], ["volunteers", "Help Out"], ["team-philosophy", "Our Philosophy"]];
   }
   get activePlayers() { return this.state.players.filter(player => player.active); }
@@ -454,7 +454,7 @@ export class AppViewModel extends EventTarget {
       type: draft.type, status: draft.status, time: draft.time,
       opponent: competitive ? gameDetails.awayTeamName : draft.opponent,
       gameDetails,
-      ...eventWithField(draft, this.state.fields || []),
+      ...eventWithField(draft, this.state.fields || [], this.state.fieldMapAssets || []),
       notes: draft.notes, slotCapacity: Number(draft.slotCapacity || 0),
     };
   }

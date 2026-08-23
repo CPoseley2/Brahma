@@ -77,6 +77,11 @@ service cloud.firestore {
       allow write: if isClubAdmin();
     }
 
+    match /fieldMapAssets/{assetId} {
+      allow read: if signedIn();
+      allow write: if isClubAdmin();
+    }
+
     match /budgetItems/{budgetItemId} {
       allow read, write: if isClubAdmin();
     }
