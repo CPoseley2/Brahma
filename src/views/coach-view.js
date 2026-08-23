@@ -43,7 +43,8 @@ export class CoachView {
     if (action === "field-mode") this.fieldMode.open(id);
     if (action === "delete-session" && confirm("Delete this practice session?")) this.vm.remove("sessions", id);
     if (action === "new-player") this.dialogs.openPlayer();
-    if (action === "add-coach") this.dialogs.openCoachPromotion();
+    if (action === "add-coach") this.dialogs.openCoachInvite();
+    if (action === "claim-player") this.#claimPlayer(id);
     if (action === "edit-player") this.dialogs.openPlayer(id);
     if (action === "save-settings") this.#saveSettings();
     if (action === "export") this.#export();
@@ -112,24 +113,39 @@ export class CoachView {
     this.root.querySelector("#rosterBody").innerHTML = players.map(player => {
       const guardians = this.vm.guardiansForPlayer(player.id);
       const primaryMember = this.vm.memberForEmail(player.familyEmail);
+      const primaryCandidate = this.vm.coachPromotionCandidate(player.id, player.familyEmail);
       const primaryCoach = this.vm.hasCoachPrivileges(player.familyEmail) ? `<span class="badge gold">Coach</span>` : "";
       const primaryAccess = primaryMember
         ? `<span class="badge blue">Joined</span>${primaryCoach}<span class="small muted access-time">${primaryMember.lastLoginAt ? `Last login ${formatDateTime(primaryMember.lastLoginAt)}` : "Last login not recorded yet"}</span>`
         : player.familyEmail ? `<span class="badge gold">Invited</span>${primaryCoach}` : "";
       const primaryContact = player.familyEmail || player.familyPhone
-        ? `<strong>Primary contact</strong> ${primaryAccess}<br>${escapeHtml(player.familyEmail || "No email")}${player.familyPhone ? `<br>${escapeHtml(player.familyPhone)}` : ""}`
+        ? `<strong>Primary contact</strong> ${primaryAccess}<br>${escapeHtml(player.familyEmail || "No email")}${player.familyPhone ? `<br>${escapeHtml(player.familyPhone)}` : ""}${primaryCandidate ? `<div class="roster-contact-actions"><button class="button small" data-action="promote-contact" data-candidate-id="${escapeHtml(primaryCandidate.id)}">Make coach</button></div>` : ""}`
         : `<span class="muted">No primary contact</span>`;
       const guardianSummary = guardians.length
         ? `<div class="roster-guardian-summary"><strong>${guardians.length} app guardian${guardians.length === 1 ? "" : "s"}</strong>${guardians.map(guardian => {
           const member = this.vm.memberForEmail(guardian.email);
+          const candidate = this.vm.coachPromotionCandidate(player.id, guardian.email);
           const status = member ? `<span class="badge blue">Joined</span>` : `<span class="badge gold">Invited</span>`;
           const coach = this.vm.hasCoachPrivileges(guardian.email) ? `<span class="badge gold">Coach</span>` : "";
           const login = member ? `<span class="small muted access-time">${member.lastLoginAt ? `Last login ${formatDateTime(member.lastLoginAt)}` : "Last login not recorded yet"}</span>` : "";
-          return `<div class="roster-guardian-access"><span>${escapeHtml(guardian.name)}</span>${status}${coach}${login}</div>`;
+          return `<div class="roster-guardian-access"><span>${escapeHtml(guardian.name)}</span>${status}${coach}${login}${candidate ? `<button class="button small" data-action="promote-contact" data-candidate-id="${escapeHtml(candidate.id)}">Make coach</button>` : ""}</div>`;
         }).join("")}</div>`
         : `<div class="roster-guardian-summary"><span class="small muted">No scoped app access added</span></div>`;
-      return `<tr><td><span class="name">${escapeHtml(player.firstName)} ${escapeHtml(player.lastName)}</span></td><td><span class="badge">${ageLabel(player.dateOfBirth)}</span></td><td>${formatDate(player.dateOfBirth)}</td><td>${primaryContact}${guardianSummary}</td><td><span class="badge ${player.active ? "" : "gray"}">${player.active ? "Active" : "Inactive"}</span></td><td><button class="button small" data-action="edit-player" data-id="${player.id}">Edit</button></td></tr>`;
+      const parentAccess = this.vm.hasParentAccessToPlayer(player.id);
+      const claimAction = parentAccess
+        ? `<span class="badge blue">Your player</span>`
+        : `<button class="button small" data-action="claim-player" data-id="${escapeHtml(player.id)}">Claim player</button>`;
+      return `<tr><td><span class="name">${escapeHtml(player.firstName)} ${escapeHtml(player.lastName)}</span></td><td><span class="badge">${ageLabel(player.dateOfBirth)}</span></td><td>${formatDate(player.dateOfBirth)}</td><td>${primaryContact}${guardianSummary}</td><td><span class="badge ${player.active ? "" : "gray"}">${player.active ? "Active" : "Inactive"}</span></td><td><div class="roster-row-actions">${player.active ? claimAction : ""}<button class="button small" data-action="edit-player" data-id="${escapeHtml(player.id)}">Edit</button></div></td></tr>`;
     }).join("") || `<tr><td colspan="6">${empty("No roster entries match.")}</td></tr>`;
+  }
+  async #claimPlayer(playerId) {
+    const player = this.vm.player(playerId); if (!player) return;
+    if (!confirm(`Claim ${player.firstName} ${player.lastName} as your player?\n\nThis associates your coach account with this player and adds Parent view to your workspace switcher.`)) return;
+    try {
+      const result = await this.vm.claimPlayer(playerId);
+      alert(result);
+      window.location.reload();
+    } catch (error) { alert(error.message); }
   }
   renderStandards() { this.root.querySelector("#standardsGrid").innerHTML = this.vm.state.skillFramework.map(group => `<article class="standard-card"><span class="badge">${escapeHtml(group.short)}</span><h3>${escapeHtml(group.name)}</h3><p>${escapeHtml(group.description)}</p><ul>${group.skills.map(skill => `<li>${escapeHtml(skill.name)}</li>`).join("")}</ul></article>`).join(""); }
   renderSettings() { const team = this.vm.state.team; this.root.querySelector("#settingsTeamName").value = team.name || ""; this.root.querySelector("#settingsSeason").value = team.season || ""; this.root.querySelector("#settingsCadence").value = team.updateCadenceDays || 14; this.root.querySelector("#settingsPhilosophy").value = team.philosophy || ""; }

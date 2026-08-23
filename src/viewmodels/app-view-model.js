@@ -11,10 +11,11 @@ export class AppViewModel extends EventTarget {
     this.identity = identity;
     this.identityLocked = Boolean(identity);
     this.isSuperUser = Boolean(services.superUser);
-    this.role = services.experienceRole || (identity ? (["headCoach", "assistantCoach"].includes(identity.membership.role) ? "coach" : "family") : localStorage.getItem("fairOaksU6.role") || "coach");
+    const membershipRole = identity ? (["headCoach", "assistantCoach"].includes(identity.membership.role) ? "coach" : "family") : null;
+    this.role = services.experienceRole && (membershipRole === "coach" || this.isSuperUser) ? services.experienceRole : membershipRole || localStorage.getItem("fairOaksU6.role") || "coach";
     this.familyId = identity ? (identity.membership.familyId || "") : (localStorage.getItem("fairOaksU6.family") || "");
     this.userId = identity?.user.uid || null;
-    this.media = services.media || null; this.teamId = services.teamId || "";
+    this.media = services.media || null; this.teamId = services.teamId || ""; this.sendCoachInvite = services.sendCoachInvite || null;
     this.lastError = null;
     this.route = this.defaultRoute;
     this.stopMessaging = this.model.startMessaging?.(
@@ -30,7 +31,13 @@ export class AppViewModel extends EventTarget {
       ? [["coach-dashboard", "Dashboard"], ["fields", "Field Archive"], ["messages", "Messages"], ["documents", "Docs"], ["development", "Player Development"], ["sessions", "Practices"], ["playbook", "Season Plan"], ["drills", "Drill Cards"], ["roster", "Roster"], ["schedule", "Schedule"], ["volunteers", "Volunteers"], ["standards", "Standards"], ["data-settings", "Data"]]
       : [["family-home", "Season Home"], ["fields", "Game-Day Map"], ["messages", "Messages"], ["documents", "Docs"], ["my-player", "Season Story"], ["schedule", "Schedule"], ["volunteers", "Help Out"], ["team-philosophy", "Our Philosophy"]];
   }
-  get activePlayers() { return this.state.players.filter(player => player.active); }
+  get activePlayers() {
+    const active = this.state.players.filter(player => player.active);
+    if (this.role !== "family" || !this.identity) return active;
+    const allowed = new Set(this.identity.membership.playerIds || []);
+    const familyId = this.identity.membership.familyId || null;
+    return active.filter(player => allowed.has(player.id) || (familyId && player.familyId === familyId));
+  }
   get practiceEvents() { return [...this.state.games].filter(event => String(event.type).toLowerCase() === "practice").sort((a, b) => (a.date + a.time).localeCompare(b.date + b.time)); }
   get curriculumPracticeEvents() { return this.practiceEvents.filter(event => event.status !== "Canceled"); }
   get drillCards() {
@@ -38,7 +45,8 @@ export class AppViewModel extends EventTarget {
     return drillLibrary.map(item => ({ ...item, ...(overrides.get(item.id) || {}) }));
   }
   get canUploadDrillImages() { return Boolean(this.media && this.teamId); }
-  get canUploadDocuments() { return this.role === "coach" && Boolean(this.media && this.teamId && this.model.saveDocument); }
+  get canManageDocuments() { return this.role === "coach" && Boolean(this.model.saveDocument && this.model.deleteDocument); }
+  get canUploadDocuments() { return this.canManageDocuments && Boolean(this.media && this.teamId); }
   lessonForPractice(eventId) { const index = this.curriculumPracticeEvents.findIndex(event => event.id === eventId); return index >= 0 ? seasonPlan[index] || null : null; }
   practiceSpotlight(referenceDate = todayIso()) {
     const eligible = this.curriculumPracticeEvents;
@@ -56,7 +64,11 @@ export class AppViewModel extends EventTarget {
   }
   get isHeadCoach() { return this.isSuperUser || this.identity?.membership.role === "headCoach"; }
   get families() {
-    if (this.state.families?.length) return this.state.families.map(family => ({ ...family, players: this.activePlayers.filter(player => player.familyId === family.id) }));
+    if (this.state.families?.length) {
+      const families = this.state.families.map(family => ({ ...family, players: this.activePlayers.filter(player => player.familyId === family.id) }));
+      const isDualAccessCoach = this.role === "family" && ["headCoach", "assistantCoach"].includes(this.identity?.membership.role);
+      return isDualAccessCoach ? families.filter(family => family.players.length) : families;
+    }
     const families = new Map();
     this.activePlayers.forEach(player => {
       const key = (player.familyEmail || player.familyPhone || player.lastName).trim().toLowerCase();
@@ -117,7 +129,6 @@ export class AppViewModel extends EventTarget {
     const add = ({ player, name, email, guardianId = "" }) => {
       const normalizedEmail = String(email || "").trim().toLowerCase();
       if (!player || !/^\S+@\S+\.\S+$/.test(normalizedEmail)) return;
-      const member = this.memberForEmail(normalizedEmail);
       if (this.hasCoachPrivileges(normalizedEmail)) return;
       const existing = candidates.get(normalizedEmail);
       const value = {
@@ -137,6 +148,17 @@ export class AppViewModel extends EventTarget {
     });
     return [...candidates.values()].sort((a, b) => a.name.localeCompare(b.name));
   }
+  coachPromotionCandidate(playerId, email) {
+    const normalized = String(email || "").trim().toLowerCase();
+    return this.coachPromotionCandidates.find(candidate => candidate.playerId === playerId && candidate.email === normalized) || null;
+  }
+  hasParentAccessToPlayer(playerId) {
+    const player = this.player(playerId);
+    const membership = this.identity?.membership || {};
+    const allowed = new Set(membership.playerIds || []);
+    return Boolean(player && (allowed.has(playerId) || (membership.familyId && player.familyId === membership.familyId)));
+  }
+  canClaimPlayer(playerId) { return this.role === "coach" && Boolean(this.player(playerId)) && !this.hasParentAccessToPlayer(playerId); }
   lastObservation(playerId, sharedOnly = false) {
     return this.state.observations.filter(item => item.playerId === playerId && (!sharedOnly || item.shared))
       .sort((a, b) => b.date.localeCompare(a.date))[0] || null;
@@ -336,6 +358,55 @@ export class AppViewModel extends EventTarget {
     this.changed();
     return `${saved.name} is now an assistant coach. Their parent access was preserved and the onboarding message was sent.`;
   }
+  async inviteCoach({ name, email }) {
+    if (this.role !== "coach") throw new Error("Only a coach can invite another coach.");
+    const cleanName = String(name || "").trim();
+    const cleanEmail = String(email || "").trim().toLowerCase();
+    if (!cleanName) throw new Error("Enter the coach’s name.");
+    if (!/^\S+@\S+\.\S+$/.test(cleanEmail)) throw new Error("Enter a valid coach email address.");
+    if (this.coachPromotionCandidates.some(candidate => candidate.email === cleanEmail)) {
+      throw new Error("This email belongs to a roster contact. Use Make coach beside that parent so their Parent access is preserved.");
+    }
+    if (!this.model.inviteCoach) throw new Error("Coach invitations are not available in this workspace.");
+    const saved = await this.model.inviteCoach({
+      name: cleanName,
+      email: cleanEmail,
+      invitedByUid: this.userId,
+      invitedAt: new Date().toISOString(),
+    });
+    if (!this.sendCoachInvite) throw new Error("Coach access was saved, but email delivery is not configured.");
+    const continueUrl = typeof window === "undefined"
+      ? "https://team.example/?workspace=coach"
+      : new URL("?workspace=coach", `${window.location.origin}${window.location.pathname}`).href;
+    try {
+      await this.sendCoachInvite(cleanEmail, continueUrl);
+    } catch (cause) {
+      const error = new Error(`Coach access was saved for ${cleanEmail}, but the sign-in email could not be sent. Try sending the invitation again.`);
+      error.inviteSaved = true; error.cause = cause; throw error;
+    }
+    this.changed();
+    return `${saved.name || cleanName} was invited as an assistant coach. A secure sign-in link was sent to ${cleanEmail}.`;
+  }
+  async claimPlayer(playerId) {
+    if (!this.canClaimPlayer(playerId)) throw new Error("You already have Parent access to this player, or the player is no longer available.");
+    if (!this.model.claimPlayerForCoach) throw new Error("Player claiming is not available in this workspace.");
+    const player = this.player(playerId);
+    const email = String(this.identity?.user.email || this.identity?.membership.email || "").trim().toLowerCase();
+    if (!email) throw new Error("Your coach account needs a verified email address before you can claim a player.");
+    const name = String(this.identity?.user.displayName || this.identity?.membership.name || email.split("@")[0]).trim();
+    const saved = await this.model.claimPlayerForCoach({
+      playerId,
+      guardianId: uid("guardian"),
+      name,
+      email,
+      claimedByUid: this.userId,
+      claimedAt: new Date().toISOString(),
+    });
+    Object.assign(this.identity.membership, saved.member);
+    this.familyId = saved.member.familyId || "";
+    this.changed();
+    return `${player.firstName} ${player.lastName} is now associated with your account. Parent view is available from the workspace switcher.`;
+  }
   async uploadDrillImage(drillId, file) {
     if (!this.isHeadCoach && this.role !== "coach") throw new Error("Only coaches can manage drill-card artwork.");
     if (!this.media || !this.teamId) throw new Error("Drill-card storage is not available.");
@@ -347,11 +418,80 @@ export class AppViewModel extends EventTarget {
   }
   async uploadDocument({ title, category, file }) {
     if (this.role !== "coach") throw new Error("Only coaches can add files to Docs.");
-    if (!this.media || !this.teamId || !this.model.saveDocument) throw new Error("Document storage is not available.");
+    if (!this.canUploadDocuments) throw new Error("Document storage is not available.");
+    const cleanTitle = this.#validateDocumentDetails(title, category);
+    this.#validateDocumentFile(file, category);
+    const id = uid("document");
+    const [uploaded] = await this.media.upload([file], `teams/${this.teamId}/documents`, id);
+    const timestamp = new Date().toISOString();
+    const value = {
+      id, title: cleanTitle, category, fileName: uploaded.fileName, url: uploaded.url, path: uploaded.path,
+      contentType: uploaded.contentType, size: uploaded.size, uploadedAt: timestamp, uploadedByUid: this.userId,
+      updatedAt: timestamp, updatedByUid: this.userId,
+    };
+    try { await this.model.saveDocument(value); }
+    catch (error) { await this.media.delete(uploaded.path).catch(() => {}); throw error; }
+    this.upsertLocal("documents", value); this.changed(); return value;
+  }
+  async updateDocument(id, { title, category }) {
+    if (!this.canManageDocuments) throw new Error("Only coaches can edit Docs.");
+    const existing = (this.state.documents || []).find(item => item.id === id);
+    if (!existing) throw new Error("That document could not be found.");
+    const value = {
+      ...existing,
+      title: this.#validateDocumentDetails(title, category),
+      category,
+      updatedAt: new Date().toISOString(),
+      updatedByUid: this.userId,
+    };
+    await this.model.saveDocument(value); this.upsertLocal("documents", value); this.changed(); return value;
+  }
+  async copyDocument(id) {
+    if (!this.canUploadDocuments) throw new Error("Only coaches can copy files in Docs.");
+    const source = (this.state.documents || []).find(item => item.id === id);
+    if (!source) throw new Error("That document could not be found.");
+    const copyId = uid("document");
+    const uploaded = await this.media.copy({
+      sourcePath: source.path,
+      directory: `teams/${this.teamId}/documents`,
+      ownerId: copyId,
+      fileName: source.fileName,
+      contentType: source.contentType,
+    });
+    const timestamp = new Date().toISOString();
+    const suffix = " copy"; const available = Math.max(1, 120 - suffix.length);
+    const value = {
+      id: copyId, title: `${source.title.slice(0, available)}${suffix}`, category: source.category,
+      fileName: uploaded.fileName, url: uploaded.url, path: uploaded.path, contentType: uploaded.contentType,
+      size: uploaded.size, uploadedAt: timestamp, uploadedByUid: this.userId,
+      updatedAt: timestamp, updatedByUid: this.userId, copiedFromId: source.id,
+    };
+    try { await this.model.saveDocument(value); }
+    catch (error) { await this.media.delete(uploaded.path).catch(() => {}); throw error; }
+    this.upsertLocal("documents", value); this.changed(); return value;
+  }
+  async deleteDocument(id) {
+    if (!this.canManageDocuments) throw new Error("Only coaches can delete files from Docs.");
+    const existing = (this.state.documents || []).find(item => item.id === id);
+    if (!existing) throw new Error("That document could not be found.");
+    await this.model.deleteDocument(id);
+    this.state.documents = (this.state.documents || []).filter(item => item.id !== id);
+    let cleanupFailed = false;
+    if (existing.path && this.media) {
+      try { await this.media.delete(existing.path); }
+      catch (error) { cleanupFailed = true; console.warn("Document metadata was deleted, but Storage cleanup failed", error); }
+    }
+    this.changed();
+    return { title: existing.title, cleanupFailed };
+  }
+  #validateDocumentDetails(title, category) {
     const cleanTitle = String(title || "").trim();
     if (!cleanTitle) throw new Error("Add a title for this file.");
     if (cleanTitle.length > 120) throw new Error("Keep the document title to 120 characters or fewer.");
     if (!["pdf", "map", "photo"].includes(category)) throw new Error("Choose PDF, Map, or Photo.");
+    return cleanTitle;
+  }
+  #validateDocumentFile(file, category) {
     if (!file) throw new Error("Choose a PDF or image to upload.");
     const supportedTypes = ["application/pdf", "image/jpeg", "image/png", "image/webp"];
     const isPdf = file.type === "application/pdf"; const isImage = supportedTypes.slice(1).includes(file.type);
@@ -360,13 +500,6 @@ export class AppViewModel extends EventTarget {
     if (!supportedTypes.includes(file.type)) throw new Error("Docs accepts PDF, JPEG, PNG, and WebP files.");
     if (!Number(file.size)) throw new Error("The selected file is empty.");
     if (file.size >= 10 * 1024 * 1024) throw new Error("Keep each Docs file under 10 MB.");
-    const id = uid("document");
-    const [uploaded] = await this.media.upload([file], `teams/${this.teamId}/documents`, id);
-    const value = {
-      id, title: cleanTitle, category, fileName: uploaded.fileName, url: uploaded.url, path: uploaded.path,
-      contentType: uploaded.contentType, size: uploaded.size, uploadedAt: new Date().toISOString(), uploadedByUid: this.userId,
-    };
-    await this.model.saveDocument(value); this.upsertLocal("documents", value); this.changed(); return value;
   }
   async sendTeamBroadcast(title, body) {
     if (this.role !== "coach") throw new Error("Only a coach can send a team announcement.");

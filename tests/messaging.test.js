@@ -84,6 +84,126 @@ test("an assistant coach can initiate a parent promotion", async () => {
   assert.match(feedback, /assistant coach/);
 });
 
+test("a dual-access coach can open Parent view without seeing unrelated players", () => {
+  const modelState = state();
+  modelState.players.push(
+    { id: "player-a", firstName: "Alpha", lastName: "Player", familyId: "family-a", active: true },
+    { id: "player-b", firstName: "Beta", lastName: "Player", familyId: "family-b", active: true },
+  );
+  const vm = new AppViewModel({ state: modelState }, {
+    user: { uid: "assistant", email: "assistant@example.com" },
+    membership: { role: "assistantCoach", familyId: null, playerIds: ["player-a"], guardianIds: ["guardian-a"] },
+  }, { experienceRole: "family" });
+  assert.equal(vm.role, "family");
+  assert.deepEqual(vm.activePlayers.map(player => player.id), ["player-a"]);
+  assert.deepEqual(vm.families.map(family => family.id), ["family-a"]);
+});
+
+test("any coach can invite a new assistant coach and send a secure sign-in link", async () => {
+  let saved; let emailed;
+  const modelState = state();
+  modelState.invites = [];
+  const model = { state: modelState, inviteCoach: async value => { saved = value; return value; } };
+  const vm = new AppViewModel(model, {
+    user: { uid: "assistant", email: "assistant@example.com" },
+    membership: { role: "assistantCoach", familyId: null },
+  }, { sendCoachInvite: async (email, url) => { emailed = { email, url }; } });
+  const feedback = await vm.inviteCoach({ name: " New Coach ", email: "NEW@EXAMPLE.COM" });
+  assert.equal(saved.email, "new@example.com");
+  assert.equal(saved.invitedByUid, "assistant");
+  assert.equal(emailed.email, "new@example.com");
+  assert.match(emailed.url, /workspace=coach/);
+  assert.match(feedback, /secure sign-in link/);
+});
+
+test("a coach can claim a player only for their own account", async () => {
+  let saved;
+  const modelState = state();
+  modelState.players.push({ id: "player-a", firstName: "Alpha", lastName: "Player", familyId: "family-a", active: true });
+  const membership = { role: "assistantCoach", email: "assistant@example.com", familyId: null, playerIds: [], guardianIds: [] };
+  const model = {
+    state: modelState,
+    claimPlayerForCoach: async value => {
+      saved = value;
+      return { guardian: { id: value.guardianId, playerId: value.playerId }, member: { ...membership, playerIds: [value.playerId], guardianIds: [value.guardianId] } };
+    },
+  };
+  const vm = new AppViewModel(model, { user: { uid: "assistant", email: "assistant@example.com", displayName: "Coach Alex" }, membership });
+  const feedback = await vm.claimPlayer("player-a");
+  assert.equal(saved.email, "assistant@example.com");
+  assert.equal(saved.name, "Coach Alex");
+  assert.deepEqual(vm.identity.membership.playerIds, ["player-a"]);
+  assert.match(feedback, /Parent view/);
+  await assert.rejects(() => vm.claimPlayer("player-a"), /already have Parent access/);
+});
+
+test("Docs is visible in both portals and coaches can upload valid files", async () => {
+  let saved; let uploaded;
+  const modelState = state();
+  const model = { state: modelState, saveDocument: async value => { saved = value; return value; }, deleteDocument: async () => {} };
+  const media = {
+    upload: async (files, directory, ownerId) => {
+      uploaded = { files, directory, ownerId };
+      return [{ fileName: "field-map.pdf", url: "https://example.com/field-map.pdf", path: `teams/team-a/documents/${ownerId}/field-map.pdf`, contentType: "application/pdf", size: 2400 }];
+    },
+    delete: async () => {},
+  };
+  const coach = new AppViewModel(model, { user: { uid: "assistant" }, membership: { role: "assistantCoach" } }, { media, teamId: "team-a" });
+  const parent = new AppViewModel({ state: modelState }, { user: { uid: "parent" }, membership: { role: "guardian", familyId: "family-a" } });
+  assert.ok(coach.navigation.some(([route]) => route === "documents"));
+  assert.ok(parent.navigation.some(([route]) => route === "documents"));
+  const document = await coach.uploadDocument({ title: " Field map ", category: "map", file: { name: "field-map.pdf", type: "application/pdf", size: 2400 } });
+  assert.equal(saved.title, "Field map");
+  assert.equal(document.category, "map");
+  assert.equal(uploaded.directory, "teams/team-a/documents");
+  assert.equal(modelState.documents.length, 1);
+  await assert.rejects(() => parent.uploadDocument({ title: "Photo", category: "photo", file: { name: "photo.png", type: "image/png", size: 100 } }), /Only coaches/);
+});
+
+test("coaches can edit, physically duplicate, and delete Docs while parents cannot", async () => {
+  const operations = [];
+  const original = {
+    id: "document-a", title: "Field map", category: "map", fileName: "map.png", url: "https://example.com/map.png",
+    path: "teams/team-a/documents/document-a/map.png", contentType: "image/png", size: 1200,
+    uploadedAt: "2026-08-16T12:00:00.000Z", uploadedByUid: "coach", updatedAt: "2026-08-16T12:00:00.000Z", updatedByUid: "coach",
+  };
+  const modelState = state(); modelState.documents.push(original);
+  const model = {
+    state: modelState,
+    saveDocument: async value => { operations.push(["save", value]); return value; },
+    deleteDocument: async id => { operations.push(["delete-metadata", id]); },
+  };
+  const media = {
+    copy: async value => { operations.push(["copy-file", value]); return { fileName: "map.png", url: "https://example.com/map-copy.png", path: `teams/team-a/documents/${value.ownerId}/map.png`, contentType: "image/png", size: 1200 }; },
+    delete: async path => { operations.push(["delete-file", path]); },
+  };
+  const coach = new AppViewModel(model, { user: { uid: "assistant" }, membership: { role: "assistantCoach" } }, { media, teamId: "team-a" });
+  const edited = await coach.updateDocument("document-a", { title: "Updated map", category: "map" });
+  assert.equal(edited.title, "Updated map");
+  const copied = await coach.copyDocument("document-a");
+  assert.match(copied.title, /copy$/);
+  assert.equal(copied.copiedFromId, "document-a");
+  assert.notEqual(copied.path, original.path);
+  const deleted = await coach.deleteDocument("document-a");
+  assert.equal(deleted.cleanupFailed, false);
+  assert.deepEqual(operations.slice(-2), [["delete-metadata", "document-a"], ["delete-file", original.path]]);
+
+  const parent = new AppViewModel({ state: modelState }, { user: { uid: "parent" }, membership: { role: "guardian", familyId: "family-a" } });
+  await assert.rejects(() => parent.updateDocument(copied.id, { title: "Blocked", category: "map" }), /Only coaches/);
+  await assert.rejects(() => parent.copyDocument(copied.id), /Only coaches/);
+  await assert.rejects(() => parent.deleteDocument(copied.id), /Only coaches/);
+});
+
+test("Docs rejects mismatched and unsupported uploads before Storage", async () => {
+  const modelState = state();
+  const model = { state: modelState, saveDocument: async value => value, deleteDocument: async () => {} };
+  const media = { upload: async () => { throw new Error("Storage should not be reached."); }, delete: async () => {} };
+  const coach = new AppViewModel(model, { user: { uid: "coach" }, membership: { role: "headCoach" } }, { media, teamId: "team-a" });
+  await assert.rejects(() => coach.uploadDocument({ title: "Not a photo", category: "photo", file: { name: "guide.pdf", type: "application/pdf", size: 100 } }), /Photo category/);
+  await assert.rejects(() => coach.uploadDocument({ title: "Animation", category: "map", file: { name: "map.gif", type: "image/gif", size: 100 } }), /Docs accepts/);
+  await assert.rejects(() => coach.uploadDocument({ title: "Empty", category: "pdf", file: { name: "empty.pdf", type: "application/pdf", size: 0 } }), /empty/);
+});
+
 test("a coach can create a team-wide broadcast", async () => {
   let saved;
   const model = { state: state(), sendBroadcast: async value => { saved = value; model.state.broadcasts.push(value); } };
@@ -97,8 +217,8 @@ test("a coach can create a team-wide broadcast", async () => {
 
 test("Docs is available to both portals and only coaches can upload", async () => {
   let saved;
-  const model = { state: state(), saveDocument: async value => { saved = value; return value; } };
-  const media = { upload: async () => [{ fileName: "field-map.pdf", url: "https://example.com/field-map.pdf", path: "teams/team-a/documents/file.pdf", contentType: "application/pdf", size: 2400 }] };
+  const model = { state: state(), saveDocument: async value => { saved = value; return value; }, deleteDocument: async () => {} };
+  const media = { upload: async () => [{ fileName: "field-map.pdf", url: "https://example.com/field-map.pdf", path: "teams/team-a/documents/file.pdf", contentType: "application/pdf", size: 2400 }], delete: async () => {} };
   const coach = new AppViewModel(model, { user: { uid: "assistant" }, membership: { role: "assistantCoach" } }, { media, teamId: "team-a" });
   const parent = new AppViewModel(model, { user: { uid: "parent" }, membership: { role: "guardian", familyId: "family-a" } }, { media, teamId: "team-a" });
 
@@ -116,8 +236,8 @@ test("Docs is available to both portals and only coaches can upload", async () =
 
 test("Docs rejects mismatched and unsupported uploads before storage", async () => {
   let uploadCalls = 0;
-  const model = { state: state(), saveDocument: async value => value };
-  const media = { upload: async () => { uploadCalls += 1; return []; } };
+  const model = { state: state(), saveDocument: async value => value, deleteDocument: async () => {} };
+  const media = { upload: async () => { uploadCalls += 1; return []; }, delete: async () => {} };
   const coach = new AppViewModel(model, { user: { uid: "coach" }, membership: { role: "headCoach" } }, { media, teamId: "team-a" });
 
   await assert.rejects(() => coach.uploadDocument({ title: "Not a photo", category: "photo", file: { name: "guide.pdf", type: "application/pdf", size: 100 } }), /Photo category/);

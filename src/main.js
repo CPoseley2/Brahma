@@ -40,7 +40,6 @@ function requestedAdminWorkspace(snapshot) {
   const requested = new URLSearchParams(window.location.search).get("workspace") || "admin";
   return workspaceModes.some(item => item.id === requested) ? requested : "admin";
 }
-
 function requestedMemberWorkspace(snapshot) {
   const profile = snapshot.profile;
   const isCoach = ["headCoach", "assistantCoach"].includes(profile?.role);
@@ -76,7 +75,13 @@ async function renderSession(snapshot = services.auth.snapshot) {
     const model = await FirestoreTeamHubModel.create(services.repository, dataMembership);
     if (version !== renderVersion) return;
     const identity = { user: snapshot.user, membership: snapshot.profile };
-    const viewModel = new AppViewModel(model, identity, { media: import.meta.env.VITE_FIREBASE_STORAGE_ENABLED === "true" ? services.media : null, teamId: services.repository.teamId, experienceRole: memberWorkspace === "parent" ? "family" : memberWorkspace === "coach" ? "coach" : null, superUser: Boolean(workspace) });
+    const viewModel = new AppViewModel(model, identity, {
+      media: import.meta.env.VITE_FIREBASE_STORAGE_ENABLED === "true" ? services.media : null,
+      teamId: services.repository.teamId,
+      experienceRole: memberWorkspace === "parent" ? "family" : memberWorkspace === "coach" ? "coach" : null,
+      superUser: Boolean(workspace),
+      sendCoachInvite: (email, continueUrl) => services.auth.sendInvitationLink(email, continueUrl),
+    });
     const dialogs = new DialogView(root, viewModel);
     const eventDialog = new EventDialogView(root, viewModel);
     const fieldMode = new FieldModeView(root, viewModel, new FieldModeViewModel());

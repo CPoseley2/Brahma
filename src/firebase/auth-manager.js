@@ -61,6 +61,10 @@ export class AuthManager extends EventTarget {
     await sendSignInLinkToEmail(this.auth, normalized, { url: continueUrl, handleCodeInApp: true });
     localStorage.setItem(EMAIL_KEY, normalized);
   }
+  async sendInvitationLink(email, continueUrl = window.location.href) {
+    const normalized = email.trim().toLowerCase();
+    await sendSignInLinkToEmail(this.auth, normalized, { url: continueUrl, handleCodeInApp: true });
+  }
   async completeEmailLink(url = window.location.href, email = localStorage.getItem(EMAIL_KEY)) {
     if (!isSignInWithEmailLink(this.auth, url)) return false;
     if (!email) throw new Error("Enter the email address that received this sign-in link.");

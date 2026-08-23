@@ -39,8 +39,24 @@ export class FirestoreTeamHubModel {
     this.#merge("messages", saved.message);
     return saved;
   }
+  async inviteCoach(value) {
+    const saved = await this.repository.inviteCoach(value, this.state);
+    this.#merge("invites", saved);
+    return saved;
+  }
+  async claimPlayerForCoach(value) {
+    const saved = await this.repository.claimPlayerForCoach(value, this.state, this.membership);
+    this.membership = saved.member;
+    this.#merge("guardians", saved.guardian);
+    this.#merge("members", saved.member);
+    return saved;
+  }
   async saveDrillCard(value) { await this.repository.saveDrillCard(value); this.#merge("drillCards", value); return value; }
   async saveDocument(value) { await this.repository.saveDocument(value); this.#merge("documents", value); return value; }
+  async deleteDocument(id) {
+    await this.repository.deleteDocument(id);
+    this.state.documents = (this.state.documents || []).filter(item => item.id !== id);
+  }
   startMessaging(onChange, onError) {
     const stops = [
       this.repository.subscribeBroadcasts(values => { this.state.broadcasts = values; onChange(); }, onError),

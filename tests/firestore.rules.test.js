@@ -2,7 +2,7 @@ import { after, before, beforeEach, describe, test } from "node:test";
 import assert from "node:assert/strict";
 import { readFile } from "node:fs/promises";
 import { initializeTestEnvironment, assertFails, assertSucceeds } from "@firebase/rules-unit-testing";
-import { collection, doc, getDoc, getDocs, query, setDoc, updateDoc, where, writeBatch } from "firebase/firestore";
+import { collection, deleteDoc, doc, getDoc, getDocs, query, setDoc, updateDoc, where, writeBatch } from "firebase/firestore";
 
 const projectId = "fair-oaks-u6-team-hub-test";
 const teamId = "fair-oaks-u6";
@@ -45,7 +45,11 @@ async function seed() {
     await setDoc(doc(db, path("messages/message-one")), { guardianId: "relationship-one", playerId: "player-a", body: "Private one", senderUid: "guardian-one", senderRole: "guardian", senderLabel: "Guardian One", createdAt: "2026-07-22T12:00:00.000Z" });
     await setDoc(doc(db, path("messages/message-two")), { guardianId: "relationship-two", playerId: "player-a", body: "Private two", senderUid: "guardian-two", senderRole: "guardian", senderLabel: "Guardian Two", createdAt: "2026-07-22T12:00:00.000Z" });
     await setDoc(doc(db, path("drillCards/gates-galore")), { imageUrl: "https://example.com/gates.png", imagePath: "teams/test/gates.png", fileName: "gates.png" });
-    await setDoc(doc(db, path("documents/field-map")), { title: "Field map", category: "map", fileName: "map.png", url: "https://example.com/map.png", path: "teams/fair-oaks-u6/documents/map.png", contentType: "image/png", size: 1200, uploadedAt: "2026-08-13T18:00:00.000Z", uploadedByUid: "coach" });
+    await setDoc(doc(db, path("documents/field-map")), {
+      title: "Field map", category: "map", fileName: "map.png", url: "https://example.com/map.png",
+      path: `teams/${teamId}/documents/field-map/map.png`, contentType: "image/png", size: 1200,
+      uploadedAt: "2026-08-16T12:00:00.000Z", uploadedByUid: "coach", updatedAt: "2026-08-16T12:00:00.000Z", updatedByUid: "coach",
+    });
     await setDoc(doc(db, path("invites/new@example.com")), { role: "guardian", familyId: "family-a", playerIds: [], guardianIds: [], active: true });
   });
 }
@@ -119,7 +123,7 @@ describe("team privacy", () => {
     await assertSucceeds(getDoc(doc(auth("coach", "coach@example.com"), path("drillCards/gates-galore"))));
     await assertFails(getDoc(doc(auth("guardian-a", "a@example.com"), path("drillCards/gates-galore"))));
   });
-  test("team documents are visible to coaches and families", async () => {
+  test("team documents are readable by coaches and parents", async () => {
     await assertSucceeds(getDoc(doc(auth("coach", "coach@example.com"), path("documents/field-map"))));
     await assertSucceeds(getDoc(doc(auth("guardian-a", "a@example.com"), path("documents/field-map"))));
     await assertSucceeds(getDocs(collection(auth("legacy-parent", "legacy@example.com"), path("documents"))));
@@ -207,6 +211,43 @@ describe("authorized writes", () => {
     const db = auth("assistant", "assistant@example.com");
     await assertFails(setDoc(doc(db, path("invites/blocked@example.com")), { email: "blocked@example.com", role: "guardian", familyId: "family-a", active: true }));
   });
+  test("any coach can invite a new assistant coach without granting Parent scope", async () => {
+    const invite = {
+      email: "new-coach@example.com", name: "New Coach", role: "assistantCoach", familyId: null,
+      playerIds: [], guardianIds: [], active: true, invitedAt: "2026-08-13T20:00:00.000Z", invitedByUid: "assistant",
+    };
+    await assertSucceeds(setDoc(doc(auth("assistant", "assistant@example.com"), path("invites/new-coach@example.com")), invite));
+    await assertFails(setDoc(doc(auth("assistant", "assistant@example.com"), path("invites/head-coach@example.com")), { ...invite, email: "head-coach@example.com", role: "headCoach" }));
+    await assertFails(setDoc(doc(auth("guardian-a", "a@example.com"), path("invites/parent-created@example.com")), { ...invite, email: "parent-created@example.com", invitedByUid: "guardian-a" }));
+  });
+  test("a coach can self-claim a player but cannot attach that player to another coach", async () => {
+    const db = auth("assistant", "assistant@example.com"); const batch = writeBatch(db);
+    batch.set(doc(db, path("guardians/assistant-claim-a")), {
+      playerId: "player-a", name: "Assistant Coach", email: "assistant@example.com", relationship: "parent", active: true,
+      createdAt: "2026-08-13T20:00:00.000Z", createdByUid: "assistant",
+    });
+    batch.update(doc(db, path("members/assistant")), {
+      playerIds: ["player-a"], guardianIds: ["assistant-claim-a"], lastClaimedPlayerId: "player-a",
+      lastClaimedGuardianId: "assistant-claim-a", lastClaimedAt: "2026-08-13T20:00:00.000Z",
+    });
+    await assertSucceeds(batch.commit());
+    const membership = (await getDoc(doc(db, path("members/assistant")))).data();
+    assert.deepEqual(membership.playerIds, ["player-a"]);
+
+    const blocked = writeBatch(db);
+    blocked.set(doc(db, path("guardians/coach-claim-b")), {
+      playerId: "player-b", name: "Head Coach", email: "coach@example.com", relationship: "parent", active: true,
+      createdAt: "2026-08-13T20:01:00.000Z", createdByUid: "assistant",
+    });
+    blocked.update(doc(db, path("members/coach")), {
+      playerIds: ["player-b"], guardianIds: ["coach-claim-b"], lastClaimedPlayerId: "player-b",
+      lastClaimedGuardianId: "coach-claim-b", lastClaimedAt: "2026-08-13T20:01:00.000Z",
+    });
+    await assertFails(blocked.commit());
+  });
+  test("coach self-claim rules do not block ordinary login activity updates", async () => {
+    await assertSucceeds(updateDoc(doc(auth("assistant", "assistant@example.com"), path("members/assistant")), { lastLoginAt: "2026-08-13T20:02:00.000Z" }));
+  });
   test("only the head coach can create guardian relationships", async () => {
     const data = { playerId: "player-a", name: "New Guardian", email: "new-guardian@example.com", relationship: "friend", active: true };
     await assertSucceeds(setDoc(doc(auth("coach", "coach@example.com"), path("guardians/new-relationship")), data));
@@ -277,9 +318,27 @@ describe("authorized writes", () => {
     await assertSucceeds(setDoc(doc(auth("assistant", "assistant@example.com"), path("drillCards/new-drill")), data));
     await assertFails(setDoc(doc(auth("guardian-a", "a@example.com"), path("drillCards/blocked")), data));
   });
-  test("coaches can add team documents but guardians cannot", async () => {
-    const data = { title: "Game day PDF", category: "pdf", fileName: "game-day.pdf", url: "https://example.com/game-day.pdf", path: "teams/fair-oaks-u6/documents/game-day.pdf", contentType: "application/pdf", size: 2400, uploadedAt: "2026-08-13T19:00:00.000Z", uploadedByUid: "assistant" };
-    await assertSucceeds(setDoc(doc(auth("assistant", "assistant@example.com"), path("documents/game-day")), data));
-    await assertFails(setDoc(doc(auth("guardian-a", "a@example.com"), path("documents/blocked")), { ...data, uploadedByUid: "guardian-a" }));
+  test("coaches have document CRUD but cannot replace immutable file metadata", async () => {
+    const db = auth("assistant", "assistant@example.com");
+    const data = {
+      title: "Game day PDF", category: "pdf", fileName: "game-day.pdf", url: "https://example.com/game-day.pdf",
+      path: `teams/${teamId}/documents/game-day/game-day.pdf`, contentType: "application/pdf", size: 2400,
+      uploadedAt: "2026-08-16T13:00:00.000Z", uploadedByUid: "assistant", updatedAt: "2026-08-16T13:00:00.000Z", updatedByUid: "assistant",
+    };
+    await assertSucceeds(setDoc(doc(db, path("documents/game-day")), data));
+    await assertSucceeds(updateDoc(doc(db, path("documents/game-day")), { title: "Updated game day", category: "map", updatedAt: "2026-08-16T13:05:00.000Z", updatedByUid: "assistant" }));
+    await assertFails(updateDoc(doc(db, path("documents/game-day")), { path: `teams/${teamId}/documents/other/file.pdf`, updatedAt: "2026-08-16T13:06:00.000Z", updatedByUid: "assistant" }));
+    await assertSucceeds(deleteDoc(doc(db, path("documents/game-day"))));
+  });
+  test("parents cannot create, edit, or delete team documents", async () => {
+    const db = auth("guardian-a", "a@example.com");
+    const data = {
+      title: "Blocked", category: "pdf", fileName: "blocked.pdf", url: "https://example.com/blocked.pdf",
+      path: `teams/${teamId}/documents/blocked/blocked.pdf`, contentType: "application/pdf", size: 100,
+      uploadedAt: "2026-08-16T13:00:00.000Z", uploadedByUid: "guardian-a", updatedAt: "2026-08-16T13:00:00.000Z", updatedByUid: "guardian-a",
+    };
+    await assertFails(setDoc(doc(db, path("documents/blocked")), data));
+    await assertFails(updateDoc(doc(db, path("documents/field-map")), { title: "Blocked edit", updatedAt: "2026-08-16T13:05:00.000Z", updatedByUid: "guardian-a" }));
+    await assertFails(deleteDoc(doc(db, path("documents/field-map"))));
   });
 });
