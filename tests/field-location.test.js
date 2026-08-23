@@ -1,7 +1,7 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import { eventWithField, fieldMapAsset, fieldSnapshot, gameEventMapFeed, gameMapDetails, hasExactPin, hasFieldMap, locationForEvent, resolveEventField } from "../src/shared/field-location.js";
-import { confirmedEventsAtArchive } from "../src/shared/field-map-explorer.js";
+import { ALL_FIELD_MAP_LOCATIONS, confirmedEventsAtArchive, confirmedEventsForMapSelection } from "../src/shared/field-map-explorer.js";
 import { fieldMapArchives } from "../src/data/field-map-archives.js";
 
 const field = {
@@ -59,6 +59,21 @@ test("the location picker receives every confirmed Phoenix date in chronological
     { id: "first", fieldId: "phoenix-p1", status: "Scheduled", date: "2026-09-12", time: "09:30" },
   ];
   assert.deepEqual(confirmedEventsAtArchive(events, fields, fieldMapArchives, "phoenix-park-2026").map(event => event.id), ["first", "later"]);
+});
+
+test("the All locations filter browses every confirmed mapped game in chronological order", () => {
+  const fields = [
+    { id: "phoenix-p1", name: "Phoenix Park · P1", park: "Phoenix Park", code: "P1", mapAssetId: "phoenix-park-2026" },
+    { id: "carnegie-c1-n", name: "Carnegie Middle · C1-N", park: "Carnegie Middle", code: "C1-N", mapAssetId: "carnegie-middle-2026" },
+  ];
+  const events = [
+    { id: "phoenix-later", fieldId: "phoenix-p1", status: "Scheduled", date: "2026-09-19", time: "10:00" },
+    { id: "carnegie-first", fieldId: "carnegie-c1-n", status: "Scheduled", date: "2026-09-12", time: "09:30" },
+    { id: "canceled", fieldId: "phoenix-p1", status: "Canceled", date: "2026-09-05", time: "09:00" },
+    { id: "unmapped", location: "Other Park", status: "Scheduled", date: "2026-09-06", time: "09:00" },
+  ];
+  assert.deepEqual(confirmedEventsForMapSelection(events, fields, fieldMapArchives, ALL_FIELD_MAP_LOCATIONS).map(event => event.id), ["carnegie-first", "phoenix-later"]);
+  assert.deepEqual(confirmedEventsForMapSelection(events, fields, fieldMapArchives, "phoenix-park-2026").map(event => event.id), ["phoenix-later"]);
 });
 
 test("all seven 2026 locations expose only permitted mapped field regions", () => {

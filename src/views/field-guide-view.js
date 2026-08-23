@@ -1,11 +1,11 @@
 import { escapeHtml, formatDate, formatTime, todayIso } from "../shared/format.js";
 import { fieldMapAsset, gameMapDetails, hasFieldMap, locationForEvent } from "../shared/field-location.js";
-import { confirmedEventsAtArchive } from "../shared/field-map-explorer.js";
+import { ALL_FIELD_MAP_LOCATIONS, confirmedEventsForMapSelection } from "../shared/field-map-explorer.js";
 
 const archiveBadge = asset => `<span class="badge ${asset?.position ? "blue" : "gold"}">${asset?.position ? escapeHtml(asset.sourceLabel || "Archive ready") : "Archive pending"}</span>`;
 
 export class FieldGuideView {
-  constructor(root, vm) { this.root = root; this.vm = vm; this.message = ""; this.selectedAssetId = ""; this.selectedEventId = ""; }
+  constructor(root, vm) { this.root = root; this.vm = vm; this.message = ""; this.selectedAssetId = ALL_FIELD_MAP_LOCATIONS; this.selectedEventId = ""; }
   mount() {
     this.root.addEventListener("click", event => this.#onClick(event));
     this.root.addEventListener("change", event => this.#onChange(event));
@@ -35,8 +35,8 @@ export class FieldGuideView {
     const usedIds = new Set(events.map(event => event.fieldId).filter(Boolean));
     fields.sort((a, b) => Number(usedIds.has(b.id)) - Number(usedIds.has(a.id)) || a.name.localeCompare(b.name));
     this.root.querySelector("#fieldGuideDescription").textContent = this.vm.role === "coach"
-      ? "Choose a location and confirmed date. The scheduled event highlights its field and supplies the matchup, time, coaches, and age group."
-      : "Choose a location and confirmed date to see the exact field your player is expected at.";
+      ? "Browse every confirmed date or narrow by location. The scheduled event highlights its field and supplies the matchup, time, coaches, and age group."
+      : "Choose a confirmed date across all locations—or narrow the list—to see the exact field your player is expected at.";
     this.root.querySelector("#fieldGuideFeedback").innerHTML = this.message ? `<div class="login-message success">${escapeHtml(this.message)}</div>` : "";
     const diagramCount = fields.filter(field => hasFieldMap(field, archives)).length;
     this.root.querySelector("#fieldDirectoryCount").textContent = `${diagramCount} mapped field${diagramCount === 1 ? "" : "s"}`;
@@ -55,10 +55,6 @@ export class FieldGuideView {
     return configured.sort((a, b) => String(a.park || a.name).localeCompare(String(b.park || b.name)));
   }
 
-  #eventsAtArchive(events, fields, archives, archiveId) {
-    return confirmedEventsAtArchive(events, fields, archives, archiveId);
-  }
-
   #renderExplorer(events, fields, archives) {
     const container = this.root.querySelector("#nextGameMap"); const controls = this.root.querySelector("#fieldMapControls");
     if (!archives.length) {
@@ -66,18 +62,27 @@ export class FieldGuideView {
       container.innerHTML = `<div class="empty-state">No location maps have been added to the Firestore archive yet.</div>`;
       return;
     }
-    const eventArchives = events.map(event => {
-      const location = locationForEvent(event, fields); return fieldMapAsset(location || {}, archives)?.archiveId || "";
-    });
-    if (!archives.some(asset => asset.id === this.selectedAssetId)) this.selectedAssetId = eventArchives.find(Boolean) || archives[0].id;
-    const selectedArchive = archives.find(asset => asset.id === this.selectedAssetId) || archives[0];
-    const confirmed = this.#eventsAtArchive(events, fields, archives, selectedArchive.id);
+    if (this.selectedAssetId !== ALL_FIELD_MAP_LOCATIONS && !archives.some(asset => asset.id === this.selectedAssetId)) this.selectedAssetId = ALL_FIELD_MAP_LOCATIONS;
+    const allLocations = this.selectedAssetId === ALL_FIELD_MAP_LOCATIONS;
+    const selectedArchive = archives.find(asset => asset.id === this.selectedAssetId) || null;
+    const confirmed = confirmedEventsForMapSelection(events, fields, archives, this.selectedAssetId);
     if (!confirmed.some(event => event.id === this.selectedEventId)) {
       this.selectedEventId = confirmed.find(event => event.date >= todayIso())?.id || confirmed.at(-1)?.id || "";
     }
     const selectedEvent = confirmed.find(event => event.id === this.selectedEventId) || null;
-    controls.innerHTML = `<div><p class="eyebrow dark">Find your field</p><h3>${escapeHtml(selectedArchive.park || selectedArchive.name || "Location map")}</h3></div><div class="field-map-pickers"><label><span>Location</span><select data-field-location-picker>${archives.map(asset => `<option value="${escapeHtml(asset.id)}" ${asset.id === selectedArchive.id ? "selected" : ""}>${escapeHtml(asset.park || asset.name || asset.id)}</option>`).join("")}</select></label><label><span>Confirmed date</span><select data-field-date-picker ${confirmed.length ? "" : "disabled"}>${confirmed.length ? confirmed.map(event => { const location = locationForEvent(event, fields); return `<option value="${escapeHtml(event.id)}" ${event.id === this.selectedEventId ? "selected" : ""}>${formatDate(event.date)} · ${formatTime(event.time)} · Field ${escapeHtml(location?.code || event.fieldCode || "TBD")}</option>`; }).join("") : `<option>No confirmed dates at this location</option>`}</select></label></div>`;
-    container.innerHTML = selectedEvent ? this.#scheduledGameMap(selectedEvent, fields, archives) : this.#archiveOnly(selectedArchive);
+    const locationOptions = `<option value="${ALL_FIELD_MAP_LOCATIONS}" ${allLocations ? "selected" : ""}>All locations</option>${archives.map(asset => `<option value="${escapeHtml(asset.id)}" ${asset.id === selectedArchive?.id ? "selected" : ""}>${escapeHtml(asset.park || asset.name || asset.id)}</option>`).join("")}`;
+    const dateOptions = confirmed.length ? confirmed.map(event => {
+      const location = locationForEvent(event, fields);
+      const venue = location?.park || location?.name || event.location || "Location TBD";
+      const locationLabel = allLocations ? ` · ${escapeHtml(venue)}` : "";
+      return `<option value="${escapeHtml(event.id)}" ${event.id === this.selectedEventId ? "selected" : ""}>${formatDate(event.date)} · ${formatTime(event.time)}${locationLabel} · Field ${escapeHtml(location?.code || event.fieldCode || "TBD")}</option>`;
+    }).join("") : `<option>${allLocations ? "No confirmed dates across club locations" : "No confirmed dates at this location"}</option>`;
+    controls.innerHTML = `<div><p class="eyebrow dark">Find your field</p><h3>${allLocations ? "All locations" : escapeHtml(selectedArchive?.park || selectedArchive?.name || "Location map")}</h3></div><div class="field-map-pickers"><label><span>Location</span><select data-field-location-picker>${locationOptions}</select></label><label><span>Confirmed date</span><select data-field-date-picker ${confirmed.length ? "" : "disabled"}>${dateOptions}</select></label></div>`;
+    container.innerHTML = selectedEvent ? this.#scheduledGameMap(selectedEvent, fields, archives) : allLocations ? this.#allLocationsEmpty() : this.#archiveOnly(selectedArchive);
+  }
+
+  #allLocationsEmpty() {
+    return `<div class="empty-state">No confirmed game dates are currently posted across the club’s mapped locations.</div>`;
   }
 
   #archiveOnly(asset) {
