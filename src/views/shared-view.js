@@ -1,5 +1,6 @@
 import { escapeHtml, formatDate, formatTime } from "../shared/format.js";
 import { hasExactPin, locationForEvent, locationLinks } from "../shared/field-location.js";
+import { partitionScheduleEvents } from "../shared/schedule.js";
 
 const empty = message => `<div class="empty-state">${message}</div>`;
 
@@ -33,8 +34,8 @@ export class SharedView {
     this.root.querySelector("#scheduleDescription").textContent = this.vm.role === "coach" ? "Manage team games, practices, and events." : "View the team calendar and respond for your player.";
     const feedback = this.root.querySelector("#scheduleFeedback");
     feedback.innerHTML = this.scheduleError ? `<div class="login-message error">${escapeHtml(this.scheduleError)}</div>` : this.scheduleMessage ? `<div class="login-message success">${escapeHtml(this.scheduleMessage)}</div>` : "";
-    const games = [...this.vm.state.games].sort((a, b) => (a.date + a.time).localeCompare(b.date + b.time));
-    this.root.querySelector("#gamesList").innerHTML = games.map(game => {
+    const { next, upcoming, past } = partitionScheduleEvents(this.vm.state.games);
+    const renderEvent = (game, { isPast = false, isNext = false } = {}) => {
       const availability = this.vm.eventAvailability(game.id);
       const availabilityBadge = availability.limited
         ? `<span class="badge ${availability.available === 0 ? "gold" : "blue"}">${availability.available} of ${availability.capacity} slots available</span>`
@@ -51,8 +52,22 @@ export class SharedView {
       const actions = this.vm.role === "coach" ? `<div class="button-row event-actions"><button class="button small" data-action="edit-game" data-id="${game.id}">Edit this event</button>${seriesActions}<button class="button small danger" data-action="delete-game" data-id="${game.id}">Delete this event</button></div>` : "";
       const location = locationForEvent(game, this.vm.state.fields || []); const links = locationLinks(location);
       const mapActions = links ? `<div class="event-location"><div><span class="event-pin" aria-hidden="true">⌖</span><span><strong>${escapeHtml(location.name)}</strong><small>${escapeHtml(location.arrivalLabel || location.address || "Open the map for directions")}</small></span></div><div class="button-row"><span class="badge ${hasExactPin(location) ? "blue" : "gold"}">${hasExactPin(location) ? "Exact pin" : "Address only"}</span><a class="button small primary" href="${escapeHtml(links.directions)}" target="_blank" rel="noopener noreferrer">Directions</a><button class="button small" data-route="fields">Map details</button></div></div>` : `<div class="event-location missing"><strong>Exact field not assigned</strong><button class="button small" data-route="fields">Check field maps</button></div>`;
-      return `<article class="list-card schedule-event-card"><div><div class="name">${formatDate(game.date)} · ${formatTime(game.time)}</div><p>${escapeHtml(game.type)} · ${escapeHtml(game.opponent || "TBD")}</p>${mapActions}${game.notes ? `<p class="small muted">${escapeHtml(game.notes)}</p>` : ""}<div class="button-row event-badges"><span class="badge">${escapeHtml(game.status)}</span>${coachRsvp}${availabilityBadge}${game.seriesId ? `<span class="badge blue">Recurring series</span>` : ""}</div>${familyActions}</div>${actions}</article>`;
-    }).join("") || empty("No team events have been entered yet.");
+      const status = isPast ? "Past" : game.status;
+      return `<article class="list-card schedule-event-card${isNext ? " is-next" : ""}${isPast ? " is-past" : ""}"><div><div class="name">${formatDate(game.date)} · ${formatTime(game.time)}</div><p>${escapeHtml(game.type)} · ${escapeHtml(game.opponent || "TBD")}</p>${mapActions}${game.notes ? `<p class="small muted">${escapeHtml(game.notes)}</p>` : ""}<div class="button-row event-badges"><span class="badge${isPast ? " past" : ""}">${escapeHtml(status)}</span>${coachRsvp}${availabilityBadge}${game.seriesId ? `<span class="badge blue">Recurring series</span>` : ""}</div>${familyActions}</div>${actions}</article>`;
+    };
+
+    const nextSection = next
+      ? `<section class="schedule-event-group schedule-next"><div class="schedule-section-head"><div><p class="eyebrow dark">Next event</p><h3>Up next</h3></div></div>${renderEvent(next, { isNext: true })}</section>`
+      : `<section class="schedule-event-group schedule-next">${empty("No upcoming team events are scheduled.")}</section>`;
+    const upcomingSection = upcoming.length
+      ? `<section class="schedule-event-group"><div class="schedule-section-head"><h3>Upcoming events</h3><span>${upcoming.length} event${upcoming.length === 1 ? "" : "s"}</span></div><div class="card-list">${upcoming.map(game => renderEvent(game)).join("")}</div></section>`
+      : "";
+    const pastSection = past.length
+      ? `<details class="schedule-history"><summary><span><strong>Past events</strong><small>${past.length} event${past.length === 1 ? "" : "s"}</small></span><span class="schedule-history-action closed">Show history ↓</span><span class="schedule-history-action open">Hide history ↑</span></summary><div class="card-list">${past.map(game => renderEvent(game, { isPast: true })).join("")}</div></details>`
+      : "";
+    this.root.querySelector("#gamesList").innerHTML = this.vm.state.games.length
+      ? `${nextSection}${upcomingSection}${pastSection}`
+      : empty("No team events have been entered yet.");
   }
   async #changeRsvp(select) {
     select.disabled = true; this.scheduleError = ""; this.scheduleMessage = "";
