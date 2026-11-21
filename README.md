@@ -1,6 +1,37 @@
-# Fair Oaks Soccer Club U6 Team Hub
+# Fair Oaks Soccer Club Team Hub
 
-## Board readme
+**A community operations prototype for planning seasons, supporting coaches, and keeping families informed.**
+
+The Team Hub brings scheduling, rosters, practice plans, equipment, budgets, and family communication into one web application. Club coordinators can compare season plans, coaches can prepare sessions and manage their teams, and guardians can follow information shared for their assigned players.
+
+[Live app](https://fair-oaks-u6-team-hub.web.app/) · [Admin demo](https://fair-oaks-u6-team-hub.web.app/?admin-demo=1) · [Board walkthrough](https://fair-oaks-u6-team-hub.web.app/board-readme.html)
+
+**Project status:** a working operations prototype. The public admin demo uses synthetic data stored in the browser and does not read or write live family records. Its budgets and planning assumptions are demonstration inputs, not approved club financials.
+
+## Features
+
+- **Season planning:** compare draft and contingency scenarios, inspect field capacity, and publish plans after resolving conflicts and incomplete team placement.
+- **Coaching tools:** organize recurring practices, follow a 26-session U6 curriculum, and use a sideline Field Mode with a practice timer.
+- **Family coordination:** manage player-scoped guardian access, RSVPs, broadcasts, and private coach conversations.
+- **Club operations:** model budgets, plan equipment needs, and track kit distribution.
+- **Shared resources:** provide field maps, drill cards, and team documents with role-based access.
+
+## Technical overview
+
+| Area | Implementation |
+| --- | --- |
+| Interface | JavaScript modules, HTML, CSS, and Vite |
+| Architecture | Framework-free MVVM: views → view-model → model |
+| Identity & data | Firebase Authentication and Cloud Firestore |
+| Files | Firebase Storage when enabled and configured |
+| Imports | CSV and XLSX roster processing; validated schedule imports |
+| Verification | Node.js tests and Firebase emulator rule tests |
+
+## Documentation
+
+[Run locally](#run-locally) · [Architecture](#architecture) · [Firebase setup](#firebase-setup) · [Access model](#access-model) · [Verification and deployment](#verification-and-deployment) · [Privacy](#privacy) · [Operations reference](#operations-reference)
+
+## Board overview
 
 This project is a working Fair Oaks Soccer Club operations prototype. It gives coordinators one place to plan a season, understand its budget, manage equipment, and communicate with families—before the season begins and with fewer last-minute changes once it is running.
 
@@ -23,25 +54,31 @@ The demo uses synthetic data: 100 teams, 1,200 players, 20 fields, and a 12-week
 3. Load the club’s actual roster, field, invoice, and uniform data for a limited preseason pilot.
 4. Approve a single published season plan and define the conditions under which a weather contingency can replace it.
 
-The live team hub is a small, framework-free MVVM application backed by Firebase Authentication and Cloud Firestore.
-
-Live app: https://fair-oaks-u6-team-hub.web.app
-
 ## Run locally
 
-```bash
-npm install
+Use Node.js **20.19+ in the 20.x line, or 22.12+**, with npm. These versions match the Vite engine requirement in the lockfile. Firebase-backed workflows also require a configured Firebase project.
+
+```sh
+git clone https://github.com/CPoseley2/Brahma.git
+cd Brahma
+npm ci
+cp .env.example .env
+```
+
+Set the Firebase web app values in `.env` for your own environment using the [Firebase setup](#firebase-setup) guidance, then start the development server:
+
+```sh
 npm run dev
 ```
 
-Open the local URL printed by Vite. A production bundle can be checked with:
+Open the local URL printed by Vite. To check the production bundle locally:
 
-```bash
+```sh
 npm run build
 npm run preview
 ```
 
-Opening `index.html` directly is no longer supported because the application uses JavaScript modules.
+The application uses JavaScript modules and must be served through the development or preview server; opening `index.html` directly is not supported.
 
 ## Architecture
 
@@ -114,6 +151,47 @@ After the administrator has a Firebase Authentication account, an authorized Fir
 FIREBASE_ACCESS_TOKEN="$(gcloud auth print-access-token)" npm run bootstrap:admin -- USER_UID admin@example.com
 ```
 
+## Verification and deployment
+
+Run the application tests and build:
+
+```sh
+npm test
+npm run build
+```
+
+With the Firebase CLI and a compatible Java runtime available, run the security-rule tests against the local emulators:
+
+```sh
+npm run test:rules
+```
+
+On macOS installations that use Homebrew OpenJDK, the existing project command can also be used:
+
+```sh
+PATH="/opt/homebrew/opt/openjdk/bin:$PATH" npm run test:rules
+```
+
+The rules tests cover anonymous denial, family isolation, private observations, atomic RSVP slot claims/releases, volunteer claims, coach access, invite-controlled membership creation, and coach/parent document permissions across Firestore and Storage.
+
+Deployment requires authorized access to the intended Firebase project. Check the active project before publishing its rules and hosting bundle:
+
+```sh
+firebase use
+firebase deploy --only firestore,storage,hosting
+```
+
+## Privacy
+
+The private roster is stored only in the ignored `private/` directory. The deployable `team-data.json` is sanitized and contains no players, family email addresses, or phone numbers. Do not move private seed data into `src/`, `dist/`, or another deployable path.
+
+## Operations reference
+
+Expand a topic for the detailed workflows, data structures, import formats, and administrative commands.
+
+<details>
+<summary>Membership and roster</summary>
+
 ## Guardian relationships
 
 The head coach can open any player from **Roster** and use the **Guardians** section to add a name, email, and relationship (`parent`, `grandparent`, `other family`, or `friend`). The app creates:
@@ -136,6 +214,11 @@ Athlete Last Name | Athlete First Name | Gender | Birthdate | Parent Email | Par
 
 Files are parsed locally and previewed before import. The importer accepts ISO and common U.S. birthdates, detects existing athletes, skips duplicates within the file, and limits each batch to 100 athletes/5 MB. Confirming the preview writes normalized family and player documents and creates a guardian invitation for each unique parent email. Existing coach invitations are never replaced.
 
+</details>
+
+<details>
+<summary>Practice scheduling and coaching</summary>
+
 ## Recurring practices
 
 The Schedule event editor supports one event or a weekly series with explicit start/end dates and any weekday combination. The live preview reports the exact number of occurrences, first and last dates, shared time, and location before saving. Recurring events carry a series ID and original occurrence date so coaches can:
@@ -153,6 +236,46 @@ The event editor lets a coach set **Total RSVP slots** from 1–200, or use `0` 
 Guardians see remaining availability on the family home and full Schedule. Choosing **Going** atomically claims an open slot and saves the player's RSVP; concurrent claims cannot take the same place. The interface then marks the player **Attending**, while the RSVP selector remains editable. Changing to **Maybe** or **Not going** atomically releases the slot for another family.
 
 Firestore rules require the RSVP and slot claim or release to agree in the same atomic write. Guardians can change only the RSVP/slot for a player assigned to their account, while coaches retain event and capacity management access.
+
+## Season curriculum and drill cards
+
+The **Season Plan** contains 26 complete practices: two sessions per week for 13 weeks. Every session totals exactly 60 minutes and follows a stable U6 rhythm:
+
+- 8 minutes of player-led arrival play
+- A 3-minute story invitation
+- Two 10-minute adventures separated by a 2-minute water reset
+- 10 minutes of finishing and brave-shot repetition
+- 14 minutes of small-sided soccer
+- A 3-minute token reflection
+
+The four token domains are Teamwork (green/black), Love of the Game (red), Brave Shots (yellow), and Tactics (blue). Tokens recognize an observable choice—helping, joyful engagement, attempting something bold, or noticing the game. They are never awards for the “best” child, goals scored, speed, or comparison.
+
+Scheduled Practice events map chronologically to the 26-session curriculum and link directly to the appropriate lesson. The **Drill Cards** library provides 30 complete text cards with setup, equipment, story, play instructions, coaching invitations, progressions, and token opportunities.
+
+### Today’s Practice and Field Mode
+
+The coach dashboard automatically selects today’s non-canceled Practice event. When there is no practice today, it previews the next scheduled practice instead. Coaches can also use the practice picker to preview any past or future active session without changing the schedule. Canceled practices do not consume a lesson in the 26-session curriculum.
+
+**Start Field Mode** opens a full-screen sideline interface with:
+
+- A scrollable practice selector plus previous/next session controls
+- The current practice block and large countdown timer
+- Start/pause, next, back, reset, and direct block-jump controls
+- The current drill’s story, setup, instructions, and short coaching invitations
+- The session’s token opportunity and observable behavior prompt
+- Whole-practice progress based on elapsed block time
+- Screen Wake Lock support where the browser and device allow it
+
+The Field Mode timer uses a wall-clock deadline rather than subtracting interval ticks, so it stays accurate if the browser briefly throttles updates. It is intentionally temporary coaching state: closing Field Mode does not alter attendance, session notes, or the team schedule.
+
+PNG artwork can be added without editing code: place a file in `src/assets/drill-cards/` using the drill ID shown on its live card, such as `gates-galore.png`. Vite discovers matching files automatically on the next build. Use a consistent 4:3 landscape canvas and keep each image under 5 MB.
+
+The secure in-app upload workflow is also implemented, but new Firebase Storage buckets now require the paid Blaze plan. This project is currently on Spark, so `.env` keeps `VITE_FIREBASE_STORAGE_ENABLED=false`. If billing and Storage are later enabled, change it to `true`; coach uploads will use `coachTeams/{teamId}/drill-cards/{drillId}`, while Firestore stores image metadata in `teams/{teamId}/drillCards/{drillId}`. The text playbook never depends on artwork or Storage.
+
+</details>
+
+<details>
+<summary>Club operations: scheduling, field maps, budget, and equipment</summary>
 
 ## Club scheduling administration
 
@@ -256,40 +379,10 @@ The importer validates all rows and field conflicts before showing a review step
 
 The coach-facing **Practice Sessions** view is derived from Schedule events: only events whose type is `Practice` appear. Attendance, focus areas, and reflections are stored as session records linked by `eventId`; schedule details remain controlled by the event. Existing unlinked session records are recovered by matching their practice date and title when possible.
 
-## Season curriculum and drill cards
+</details>
 
-The **Season Plan** contains 26 complete practices: two sessions per week for 13 weeks. Every session totals exactly 60 minutes and follows a stable U6 rhythm:
-
-- 8 minutes of player-led arrival play
-- A 3-minute story invitation
-- Two 10-minute adventures separated by a 2-minute water reset
-- 10 minutes of finishing and brave-shot repetition
-- 14 minutes of small-sided soccer
-- A 3-minute token reflection
-
-The four token domains are Teamwork (green/black), Love of the Game (red), Brave Shots (yellow), and Tactics (blue). Tokens recognize an observable choice—helping, joyful engagement, attempting something bold, or noticing the game. They are never awards for the “best” child, goals scored, speed, or comparison.
-
-Scheduled Practice events map chronologically to the 26-session curriculum and link directly to the appropriate lesson. The **Drill Cards** library provides 30 complete text cards with setup, equipment, story, play instructions, coaching invitations, progressions, and token opportunities.
-
-### Today’s Practice and Field Mode
-
-The coach dashboard automatically selects today’s non-canceled Practice event. When there is no practice today, it previews the next scheduled practice instead. Coaches can also use the practice picker to preview any past or future active session without changing the schedule. Canceled practices do not consume a lesson in the 26-session curriculum.
-
-**Start Field Mode** opens a full-screen sideline interface with:
-
-- A scrollable practice selector plus previous/next session controls
-- The current practice block and large countdown timer
-- Start/pause, next, back, reset, and direct block-jump controls
-- The current drill’s story, setup, instructions, and short coaching invitations
-- The session’s token opportunity and observable behavior prompt
-- Whole-practice progress based on elapsed block time
-- Screen Wake Lock support where the browser and device allow it
-
-The Field Mode timer uses a wall-clock deadline rather than subtracting interval ticks, so it stays accurate if the browser briefly throttles updates. It is intentionally temporary coaching state: closing Field Mode does not alter attendance, session notes, or the team schedule.
-
-PNG artwork can be added without editing code: place a file in `src/assets/drill-cards/` using the drill ID shown on its live card, such as `gates-galore.png`. Vite discovers matching files automatically on the next build. Use a consistent 4:3 landscape canvas and keep each image under 5 MB.
-
-The secure in-app upload workflow is also implemented, but new Firebase Storage buckets now require the paid Blaze plan. This project is currently on Spark, so `.env` keeps `VITE_FIREBASE_STORAGE_ENABLED=false`. If billing and Storage are later enabled, change it to `true`; coach uploads will use `coachTeams/{teamId}/drill-cards/{drillId}`, while Firestore stores image metadata in `teams/{teamId}/drillCards/{drillId}`. The text playbook never depends on artwork or Storage.
+<details>
+<summary>Messaging and shared documents</summary>
 
 ## Messaging and broadcasts
 
@@ -319,17 +412,12 @@ FIREBASE_ACCESS_TOKEN="$(gcloud auth print-access-token)" npm run bootstrap:team
 
 The bootstrap script reads the ignored private seed only for the team name, philosophy, and skill framework. It does not upload players or contact details.
 
-## Verification and deployment
+</details>
 
-```bash
-PATH="/opt/homebrew/opt/openjdk/bin:$PATH" npm run test:rules
-npm test
-npm run build
-firebase deploy --only firestore,storage,hosting
-```
+## Feedback
 
-The rules tests run against the Firebase emulators and cover anonymous denial, family isolation, private observations, atomic RSVP slot claims/releases, volunteer claims, coach access, invite-controlled membership creation, and coach/parent document permissions across both Firestore and Storage.
+Use [repository issues](https://github.com/CPoseley2/Brahma/issues) for reproducible bugs or focused improvement suggestions. Include the affected role, workflow, expected behavior, and steps to reproduce with synthetic data. Keep player records and family contact information out of public reports.
 
-## Privacy
+## Author
 
-The private roster is stored only in the ignored `private/` directory. The deployable `team-data.json` is sanitized and contains no players, family email addresses, or phone numbers. Do not move private seed data into `src/`, `dist/`, or another deployable path.
+Created by [Collin “Keek” Poseley](https://github.com/CPoseley2).
