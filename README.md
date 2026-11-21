@@ -1,8 +1,8 @@
-# Fair Oaks Soccer Club Team Hub
+# Brahma
 
 **A community operations prototype for planning seasons, supporting coaches, and keeping families informed.**
 
-The Team Hub brings scheduling, rosters, practice plans, equipment, budgets, and family communication into one web application. Club coordinators can compare season plans, coaches can prepare sessions and manage their teams, and guardians can follow information shared for their assigned players.
+Brahma brings scheduling, rosters, practice plans, equipment, budgets, and family communication into one web application. Club coordinators can compare season plans, coaches can prepare sessions and manage their teams, and guardians can follow information shared for their assigned players.
 
 [Live app](https://fair-oaks-u6-team-hub.web.app/) · [Admin demo](https://fair-oaks-u6-team-hub.web.app/?admin-demo=1) · [Board walkthrough](https://fair-oaks-u6-team-hub.web.app/board-readme.html)
 
@@ -33,7 +33,7 @@ The Team Hub brings scheduling, rosters, practice plans, equipment, budgets, and
 
 ## Board overview
 
-This project is a working Fair Oaks Soccer Club operations prototype. It gives coordinators one place to plan a season, understand its budget, manage equipment, and communicate with families—before the season begins and with fewer last-minute changes once it is running.
+Brahma is a working youth soccer operations prototype developed around Fair Oaks Soccer Club workflows. It gives coordinators one place to plan a season, understand its budget, manage equipment, and communicate with families—before the season begins and with fewer last-minute changes once it is running.
 
 - **Board-friendly guide:** [Open the live Board Readme](https://fair-oaks-u6-team-hub.web.app/board-readme.html)
 - **Interactive admin demo:** [Open the Admin Workspace](https://fair-oaks-u6-team-hub.web.app/?admin-demo=1)
